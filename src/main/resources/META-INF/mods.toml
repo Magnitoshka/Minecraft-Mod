@@ -1,0 +1,21 @@
+modLoader="javafml"
+loaderVersion="[66,)"
+license="All Rights Reserved"
+[[mods]]
+modId="smartsettlements"
+version="0.1.0+26.3"
+displayName="Smart Settlements / Умные поселения"
+authors="Magnitoshka"
+description='''Settlement management MVP: found settlements, recruit citizens, manage food, storage and treasury with M.'''
+[[dependencies.smartsettlements]]
+modId="forge"
+mandatory=true
+versionRange="[66.1.0,67)"
+ordering="NONE"
+side="BOTH"
+[[dependencies.smartsettlements]]
+modId="minecraft"
+mandatory=true
+versionRange="[26.3,26.4)"
+ordering="NONE"
+side="BOTH"
