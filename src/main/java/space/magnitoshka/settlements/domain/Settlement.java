@@ -19,6 +19,7 @@ public final class Settlement {
     /** Nutrition remaining from already consumed food items. Five points feed one resident/day. */
     public int foodCredit;
     public Map<String, Integer> resources = new HashMap<>();
+    public List<Building> buildings = new ArrayList<>();
     public List<Resident> residents = new ArrayList<>();
 
     public Settlement() {}

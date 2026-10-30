@@ -93,26 +93,23 @@ public final class ServerSettlements {
         level.setBlock(p.offset(0,3,0),Blocks.LANTERN.defaultBlockState().setValue(net.minecraft.world.level.block.LanternBlock.HANGING,true),3);
         level.setBlock(p.offset(0,5,0),Blocks.BANNER.blue().defaultBlockState(),3);
     }
-    private static void spawn(ServerLevel level, Settlement s, Resident r) {
+    static void spawn(ServerLevel level, Settlement s, Resident r) {
         var citizen=Settlements.CITIZEN.get().create(level,EntitySpawnReason.TRIGGERED);
         if (citizen==null) throw new IllegalStateException("Citizen creation failed");
         citizen.initialize(s.id,r);
-        int index=0;
-        for(int slot=0;slot<3;slot++) {
-            String candidate=(s.x-2+slot*2)+","+s.y+","+(s.z+2);
-            if(level.getBlockState(new BlockPos(s.x-2+slot*2,s.y,s.z+2)).getBlock() instanceof BedBlock && s.residents.stream().noneMatch(v->candidate.equals(v.bed))) {index=slot;break;}
-        }
-        citizen.setPos(s.x-2+index*2+.5,s.y,s.z-1+.5);
-        if (level.addFreshEntity(citizen)) {
-            r.spawned=true; r.bed=(s.x-2+index*2)+","+s.y+","+(s.z+2);
-        }
+        var beds=Construction.beds(level,s);
+        var free=beds.stream().filter(bed->s.residents.stream().noneMatch(v->Construction.bedKey(bed).equals(v.bed))).findFirst().orElse(null);
+        citizen.setPos(s.x+.5,s.y,s.z-1+.5);
+        if(level.addFreshEntity(citizen)) {r.spawned=true;r.bed=free==null?"":Construction.bedKey(free);}
     }
     public static boolean interact(PlayerInteractEvent.RightClickBlock event) {
         if (!(event.getEntity() instanceof ServerPlayer p) || event.getHand()!=InteractionHand.MAIN_HAND) return false;
         var block=event.getLevel().getBlockState(event.getPos()).getBlock();
         if (block!=Blocks.BARREL && block!=Blocks.CRAFTING_TABLE) return false;
         for (var s:SettlementData.get(p.level().getServer()).state.settlements.values()) {
-            if (!sameDimension(p,s) || event.getPos().distSqr(new BlockPos(s.x,s.y,s.z))>12) continue;
+            boolean hall=event.getPos().distSqr(new BlockPos(s.x,s.y,s.z))<=12;
+            boolean warehouse=s.buildings.stream().anyMatch(b->b.complete&&b.type.equals("warehouse")&&b.contains(event.getPos().getX(),event.getPos().getZ(),0)&&Math.abs(event.getPos().getY()-b.y)<=1);
+            if(!sameDimension(p,s)||(!hall&&!warehouse))continue;
             event.setCancellationResult(InteractionResult.SUCCESS);
             if (s.owner.equals(p.getUUID())) SettlementNetwork.open(p,s.id,null); else fail(p,"owner");
             return true;
@@ -132,8 +129,19 @@ public final class ServerSettlements {
                     level.getChunkSource().addTicketWithRadius(Settlements.LOADING.get(),new net.minecraft.world.level.ChunkPos((s.x>>4)+dx,(s.z>>4)+dz),2);
             }
             if(level.hasChunkAt(new BlockPos(s.x-4,s.y,s.z-3)) && level.hasChunkAt(new BlockPos(s.x+4,s.y,s.z+3))) {
-                int beds=countBeds(level,s);
-                if(s.bedCapacity!=beds) {s.bedCapacity=beds;data.setDirty();}
+                var beds=Construction.beds(level,s); int count=beds.size();
+                if(s.bedCapacity!=count) {s.bedCapacity=count;data.setDirty();}
+                var available=new HashSet<String>();for(var bed:beds)available.add(Construction.bedKey(bed));
+                var used=new HashSet<String>();
+                for(var r:s.residents)if(r.bed!=null&&available.contains(r.bed)&&used.add(r.bed)) {} else {
+                    if(r.bed!=null&&!r.bed.isEmpty())data.setDirty();r.bed="";
+                }
+                available.removeAll(used);
+                for(var r:s.residents)if(r.bed.isEmpty()&&!available.isEmpty()) {r.bed=available.iterator().next();available.remove(r.bed);data.setDirty();}
+                for(var b:s.buildings)if(!b.complete) {
+                    boolean builder=s.residents.stream().anyMatch(r->r.profession.equals("builder")&&r.workEfficiency()>0);
+                    if(!builder)b.status="waiting_builder";
+                }
             }
             long day=Math.floorDiv(level.getOverworldClockTime(),24000);
             // Catch up all elapsed days; no unloaded-world food or hunger exploit.
@@ -167,6 +175,12 @@ public final class ServerSettlements {
         catch (IllegalArgumentException ex) { return; }
         boolean ok=false;
         switch (request.action()) {
+            case "build" -> {
+                int dx=(int)(request.amount()>>32),dz=(int)request.amount();
+                String result=Construction.request(p,s,request.text(),dx,dz);
+                ok=result.equals("ok");
+                if(!ok)p.sendSystemMessage(Component.translatable("message.smartsettlements.build_"+result));
+            }
             case "depositCoins", "withdrawCoins" -> ok=world.transfer(p.getUUID(),s.id,request.amount(),request.action().equals("depositCoins"));
             case "rename" -> ok=world.rename(p.getUUID(),s.id,request.text());
             case "hire" -> {
@@ -181,17 +195,17 @@ public final class ServerSettlements {
                 catch (IllegalArgumentException ex) { return; }
             }
             case "depositItem" -> {
-                if (nearHall(p,s)) {
+                if (nearStorage(p,s)) {
                     ItemStack held=p.getMainHandItem();
                     // Virtual stock accepts plain stackable resources only; never erase NBT/components, durability or containers.
                     if (!held.isEmpty() && held.getMaxStackSize()>1 && held.getComponentsPatch().isEmpty()) {
-                        int accepted=s.deposit(BuiltInRegistries.ITEM.getKey(held.getItem()).toString(),held.getCount(),SettlementConfig.CAPACITY.get());
+                        int accepted=s.deposit(BuiltInRegistries.ITEM.getKey(held.getItem()).toString(),held.getCount(),Construction.capacity(s));
                         held.shrink(accepted); ok=accepted>0;
                     }
                 }
             }
             case "withdrawItem" -> {
-                if (nearHall(p,s) && request.amount()>0 && request.amount()<=64) {
+                if (nearStorage(p,s) && request.amount()>0 && request.amount()<=64) {
                     var resourceId=Identifier.tryParse(request.text());
                     var item=resourceId==null?null:BuiltInRegistries.ITEM.getValue(resourceId);
                     if (item!=null && item!=Items.AIR) {
@@ -208,26 +222,19 @@ public final class ServerSettlements {
                 }
             }
         }
-        if (ok) data.setDirty(); else fail(p,"action");
+        if (ok) data.setDirty(); else if(!request.action().equals("build"))fail(p,"action");
         SettlementNetwork.refresh(p);
     }
-    static int countBeds(ServerLevel level, Settlement s) {
-        int beds=0;
-        for(int i=0;i<3;i++) {
-            var foot=level.getBlockState(new BlockPos(s.x-2+i*2,s.y,s.z+1));
-            var head=level.getBlockState(new BlockPos(s.x-2+i*2,s.y,s.z+2));
-            if(foot.getBlock() instanceof BedBlock && head.getBlock()==foot.getBlock()
-                && foot.getValue(BedBlock.PART)==BedPart.FOOT && head.getValue(BedBlock.PART)==BedPart.HEAD
-                && foot.getValue(BedBlock.FACING)==Direction.SOUTH && head.getValue(BedBlock.FACING)==Direction.SOUTH) beds++;
-        }
-        return Math.min(beds,SettlementConfig.BEDS.get());
-    }
+    static int countBeds(ServerLevel level, Settlement s) {return Construction.beds(level,s).size();}
     public static int nutrition(String key) {
         var item=BuiltInRegistries.ITEM.getValue(Identifier.parse(key));
         var food=item==null?null:item.components().get(net.minecraft.core.component.DataComponents.FOOD);
         return food==null?0:food.nutrition();
     }
     private static boolean sameDimension(ServerPlayer p,Settlement s) { return p.level().dimension().identifier().toString().equals(s.dimension); }
+    private static boolean nearStorage(ServerPlayer p,Settlement s) {
+        return nearHall(p,s)||(sameDimension(p,s)&&s.buildings.stream().anyMatch(b->b.complete&&b.type.equals("warehouse")&&p.distanceToSqr(b.x+.5,b.y,b.z+.5)<=64));
+    }
     private static boolean nearHall(ServerPlayer p,Settlement s) { return sameDimension(p,s) && p.distanceToSqr(s.x+.5,s.y,s.z+.5)<=64; }
     private static boolean fail(ServerPlayer p,String key) { p.sendSystemMessage(Component.translatable("message.smartsettlements."+key)); return false; }
     private ServerSettlements() {}

@@ -92,10 +92,20 @@ public final class WorldState {
 
     public boolean assign(UUID actor, UUID settlementId, UUID residentId, String profession) {
         var s = accessible(actor, settlementId);
-        if (s == null || !("builder".equals(profession) || "unemployed".equals(profession))) return false;
+        if (s == null || !Set.of("builder","unemployed","lumberjack","miner","farmer").contains(profession)) return false;
         for (var r : s.residents) {
             if (r.id.equals(residentId)) {
+                String required=switch(profession) {case "lumberjack"->"lumber_hut";case "miner"->"mine";case "farmer"->"field";default->"";};
+                String workplace="";
+                if(!required.isEmpty()) {
+                    workplace=s.buildings.stream().filter(b->b.complete && b.type.equals(required))
+                        .filter(b->s.residents.stream().noneMatch(other->!other.id.equals(r.id) && b.id.equals(other.workplace)))
+                        .map(b->b.id).findFirst().orElse(null);
+                    if(workplace==null)return false;
+                }
+                r.workplace=workplace;
                 if (!r.profession.equals(profession)) {
+                    r.workTicks=0;r.carriedWheat=0;r.workStatus="idle";
                     r.profession = profession;
                     r.level = 1;
                     r.experience = 0;

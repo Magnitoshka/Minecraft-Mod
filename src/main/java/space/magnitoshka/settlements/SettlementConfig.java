@@ -24,13 +24,22 @@ public final class SettlementConfig {
     public static final ForgeConfigSpec.IntValue BANNER = integer("secondBannerPrice", 200, 1, 10000000);
     public static final ForgeConfigSpec.DoubleValue BANNER_SCALE = B.defineInRange("bannerPriceMultiplier", 1.5, 1, 10);
     public static final ForgeConfigSpec.IntValue LOADED = integer("loadedSettlementsPerPlayer", 8, 0, 64);
+    public static final ForgeConfigSpec.IntValue BUILD_RATE = integer("builderBlocksPerSecond", 4, 1, 32);
+    public static final ForgeConfigSpec.IntValue MINE_SECONDS = integer("mineProductionSeconds", 15, 1, 600);
+    public static final ForgeConfigSpec.IntValue LUMBER_SECONDS = integer("lumberWorkSeconds", 4, 1, 120);
+    public static final ForgeConfigSpec.IntValue FARM_SECONDS = integer("farmWorkSeconds", 4, 1, 120);
+    public static final ForgeConfigSpec.IntValue WAREHOUSE_BONUS = integer("additionalWarehouseCapacity", 1000, 1, 1000000);
+    public static final ForgeConfigSpec.IntValue WORK_RADIUS = integer("lumberSearchRadius", 24, 4, 32);
+    public static final ForgeConfigSpec.IntValue BUILDER_XP = integer("builderXpPerBlock", 1, 0, 100);
+    public static final ForgeConfigSpec.IntValue WORK_XP = integer("workerXpPerDelivery", 5, 0, 1000);
+    public static final ForgeConfigSpec.IntValue PATH_BUDGET = integer("pathCalculationsPerTick", 8, 1, 64);
     public static final ForgeConfigSpec SPEC = B.build();
     private static ForgeConfigSpec.IntValue integer(String key, int value, int min, int max) {
         return B.defineInRange(key, value, min, max);
     }
     public static Rules rules() { return rules(BEDS.get()); }
     public static Rules rules(int availableBeds) {
-        int beds=Math.clamp(availableBeds,0,BEDS.get());
+        int beds=Math.clamp(availableBeds,0,1024);
         return new Rules(RADIUS.get(), GAP.get(), CAPACITY.get(), HIRE.get(), HIRE_EXTRA.get(),
             WOOD.get(), STONE.get(), FOOD.get(), DAILY_FOOD.get(), IMMIGRATION.get(), FOOD_DAYS.get(),
             MOOD.get(), beds, Math.min(RESIDENTS.get(),beds));

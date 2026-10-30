@@ -23,6 +23,8 @@ import space.magnitoshka.settlements.domain.Resident;
 
 public final class CitizenEntity extends PathfinderMob {
     private UUID settlementId;
+    private final CitizenWork work = new CitizenWork();
+    private boolean nightRoutine;
     public CitizenEntity(EntityType<? extends CitizenEntity> type, Level level) { super(type,level); setPersistenceRequired(); }
     public static AttributeSupplier.Builder attributes() {
         return createMobAttributes().add(Attributes.MAX_HEALTH,20).add(Attributes.MOVEMENT_SPEED,.25).add(Attributes.FOLLOW_RANGE,24);
@@ -35,6 +37,13 @@ public final class CitizenEntity extends PathfinderMob {
     public void initialize(UUID settlement, Resident resident) {
         settlementId=settlement; setUUID(resident.id); setCustomName(Component.literal(resident.name)); setCustomNameVisible(true);
     }
+    @Override public boolean hurtServer(ServerLevel level, DamageSource source, float damage) {
+        if(settlementId!=null && source.getEntity() instanceof Player attacker) {
+            var s=SettlementData.get(level.getServer()).state.settlements.get(settlementId);
+            if(s!=null && s.owner.equals(attacker.getUUID()))return false;
+        }
+        return super.hurtServer(level,source,damage);
+    }
     @Override public void tick() {
         super.tick();
         if (!(level() instanceof ServerLevel server) || settlementId==null || tickCount%20!=0) return;
@@ -44,29 +53,35 @@ public final class CitizenEntity extends PathfinderMob {
         var r=s.residents.stream().filter(v->v.id.equals(getUUID())).findFirst().orElse(null);
         if (r==null) { discard(); return; }
         setCustomName(Component.literal(r.name).append(Component.literal(" · ")).append(Component.translatable("profession.smartsettlements."+r.profession)));
-        int index=s.residents.indexOf(r);
-        BlockPos bed=new BlockPos(s.x-2+index*2,s.y,s.z+1);
-        if (!r.bed.isEmpty()) {
+        BlockPos bed=null;
+        if(r.bed!=null&&!r.bed.isEmpty()) {
             String[] xyz=r.bed.split(",");
-            if(xyz.length==3)bed=new BlockPos(Integer.parseInt(xyz[0]),Integer.parseInt(xyz[1]),Integer.parseInt(xyz[2]));
+            try {if(xyz.length==3)bed=new BlockPos(Integer.parseInt(xyz[0]),Integer.parseInt(xyz[1]),Integer.parseInt(xyz[2]));}
+            catch(NumberFormatException ignored) {}
         }
-        boolean hasBed=server.getBlockState(bed).getBlock() instanceof net.minecraft.world.level.block.BedBlock;
+        boolean hasBed=bed!=null && server.hasChunkAt(bed) && server.getBlockState(bed).getBlock() instanceof net.minecraft.world.level.block.BedBlock;
         int mood=Math.max(0,100-r.hungerDays*50-(hasBed?0:25));
         if(r.mood!=mood) { r.mood=mood; data.setDirty(); }
         long time=Math.floorMod(server.getOverworldClockTime(),24000);
-        if (time>=12500 && time<23500 && hasBed) {
-            if (!isSleeping()) {
-                if (distanceToSqr(bed.getX()+.5,bed.getY()+.5,bed.getZ()+.5)<4) startSleeping(bed);
-                else getNavigation().moveTo(bed.getX()+.5,bed.getY(),bed.getZ()+.5,.8);
+        boolean night=time>=12500&&time<23500;
+        if(night!=nightRoutine) {getNavigation().stop();nightRoutine=night;}
+        if(night) {
+            r.workStatus="resting";
+            if(!hasBed) {if(isSleeping())stopSleeping();getNavigation().stop();return;}
+            if(!isSleeping()) {
+                if(distanceToSqr(bed.getX()+.5,bed.getY()+.5,bed.getZ()+.5)<4) {getNavigation().stop();startSleeping(bed);}
+                else if(getNavigation().isDone()&&NavigationBudget.take(server.getServer()))getNavigation().moveTo(bed.getX()+.5,bed.getY(),bed.getZ()+.5,.8);
             }
         } else {
-            if (isSleeping()) stopSleeping();
-            if (getNavigation().isDone() && tickCount%100==0) {
-                int dx=getRandom().nextInt(9)-4, dz=getRandom().nextInt(9)-4;
+            if(isSleeping()) {stopSleeping();getNavigation().stop();}
+            work.tick(this,server,data,s,r);
+            if(r.profession.equals("unemployed")&&getNavigation().isDone()&&tickCount%100==0&&NavigationBudget.take(server.getServer())) {
+                int dx=getRandom().nextInt(9)-4,dz=getRandom().nextInt(9)-4;
                 getNavigation().moveTo(s.x+dx+.5,s.y,s.z+dz+.5,.6);
             }
         }
     }
+
     @Override protected InteractionResult mobInteract(Player player, InteractionHand hand) {
         if (player instanceof ServerPlayer sp && settlementId!=null) {
             var s=SettlementData.get(sp.level().getServer()).state.settlements.get(settlementId);

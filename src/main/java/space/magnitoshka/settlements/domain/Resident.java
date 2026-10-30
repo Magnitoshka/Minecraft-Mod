@@ -13,6 +13,10 @@ public final class Resident {
     public int hungerDays;
     public boolean spawned;
     public String bed = "";
+    public String workplace = "";
+    public String workStatus = "idle";
+    public int workTicks;
+    public int carriedWheat;
 
     public Resident() {}
 
@@ -22,6 +26,6 @@ public final class Resident {
 
     public double workEfficiency() {
         if (hungerDays >= 2) return 0;
-        return (hungerDays == 1 ? .5 : 1) * (1 + .15 * (level - 1));
+        return (hungerDays == 1 ? .5 : 1) * (1 + .15 * (level - 1)) * Math.clamp((mood + hungerDays * 50) / 100.0, .25, 1.0);
     }
 }

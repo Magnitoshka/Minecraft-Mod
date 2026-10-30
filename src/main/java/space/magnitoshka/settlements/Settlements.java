@@ -53,6 +53,7 @@ public final class Settlements {
             tests.register("hall",()->suite::hallContainsThreeCompleteBedsAndWarehouse);
             tests.register(group);
         }
+        net.minecraftforge.event.RegisterCommandsEvent.BUS.addListener(SettlementAdmin::register);
         SettlementNetwork.init();
     }
 }

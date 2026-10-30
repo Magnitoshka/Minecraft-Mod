@@ -10,7 +10,7 @@ import net.minecraftforge.network.PacketDistributor;
 import space.magnitoshka.settlements.domain.Settlement;
 
 public final class SettlementNetwork {
-    private static final SimpleChannel CHANNEL = ChannelBuilder.named(Settlements.MODID + ":main").networkProtocolVersion(1).simpleChannel();
+    private static final SimpleChannel CHANNEL = ChannelBuilder.named(Settlements.MODID + ":main").networkProtocolVersion(2).simpleChannel();
     private static final Map<UUID, UUID> VIEWERS = new HashMap<>();
     public static Consumer<Snapshot> clientReceiver = snapshot -> {};
     public record Action(String action, String settlement, String resident, String text, long amount) {}
@@ -58,6 +58,6 @@ public final class SettlementNetwork {
             }
         }
         CHANNEL.send(new Snapshot(settlement,summaries,state.wallets.getOrDefault(player.getUUID(),0L),positions,resident,open,
-            SettlementConfig.RADIUS.get(),SettlementConfig.CAPACITY.get(),settlement==null?0:settlement.bedCapacity,foodDays(settlement)),PacketDistributor.PLAYER.with(player));
+            SettlementConfig.RADIUS.get(),settlement==null?SettlementConfig.CAPACITY.get():Construction.capacity(settlement),settlement==null?0:settlement.bedCapacity,foodDays(settlement)),PacketDistributor.PLAYER.with(player));
     }
 }

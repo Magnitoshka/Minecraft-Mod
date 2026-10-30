@@ -30,6 +30,11 @@ public final class ClientEvents {
             if (mc.gui.screen() instanceof SettlementScreen screen) screen.update(snapshot);
             else if (snapshot.open()) mc.gui.setScreen(new SettlementScreen(snapshot));
         };
+        net.minecraftforge.client.event.ClientPlayerNetworkEvent.LoggingOut.BUS.addListener(e->CitizenSkins.clear());
+        net.minecraftforge.event.entity.EntityLeaveLevelEvent.BUS.addListener(e->{
+            if(e.getLevel().isClientSide()&&e.getEntity() instanceof CitizenEntity)
+                Minecraft.getInstance().execute(()->CitizenSkins.release(e.getEntity().getUUID()));
+        });
         TickEvent.ClientTickEvent.Post.BUS.addListener(e -> {
             while (MAP.consumeClick()) {
                 var mc=Minecraft.getInstance();
@@ -37,11 +42,16 @@ public final class ClientEvents {
             }
         });
     }
-    private static final class CitizenRenderer extends HumanoidMobRenderer<CitizenEntity,HumanoidRenderState,HumanoidModel<HumanoidRenderState>> {
+    private static final class CitizenState extends HumanoidRenderState {
+        Identifier skin=Identifier.withDefaultNamespace("textures/entity/player/wide/steve.png");
+    }
+    private static final class CitizenRenderer extends HumanoidMobRenderer<CitizenEntity,CitizenState,HumanoidModel<CitizenState>> {
         CitizenRenderer(EntityRendererProvider.Context ctx) { super(ctx,new HumanoidModel<>(ctx.bakeLayer(ModelLayers.PLAYER)),.5f); }
-        @Override public HumanoidRenderState createRenderState() { return new HumanoidRenderState(); }
-        @Override public Identifier getTextureLocation(HumanoidRenderState state) {
-            return Identifier.withDefaultNamespace("textures/entity/player/wide/steve.png");
+        @Override public CitizenState createRenderState() { return new CitizenState(); }
+        @Override public void extractRenderState(CitizenEntity citizen,CitizenState state,float delta) {
+            super.extractRenderState(citizen,state,delta);
+            state.skin=CitizenSkins.texture(citizen.getUUID());
         }
+        @Override public Identifier getTextureLocation(CitizenState state) {return state.skin;}
     }
 }
