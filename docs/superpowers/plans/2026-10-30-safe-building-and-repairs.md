@@ -8,10 +8,14 @@
 - [x] Add persistent repair unit indices, material-carry origin, budgeted completed-building inspection, hall registration for old/new settlements and paired bed repair. Ignore template air and farm crops; preserve nonempty replacement blocks, fluids, inventories, dynamic states and permissions.
 - [x] Let builders claim repair jobs after new work, fetch logs/cobblestone in four-slot inventory, restore only damaged units, charge only successful writes and release/reset assignment on completion. Repairing the hall barrel can fetch from virtual hall stock even while that barrel is absent. Do not repeat sapling gifts or reapply hall upgrades.
 - [x] Add repair/safety statuses and notices, map repair progress, upgrade/repair exclusion, configuration, localization and protocol update as needed. Keep completed building benefits active during maintenance.
-- [ ] Read-only review, fresh Java25 clean assemble, actual archive/class/localization/checksum inspection, update README/queue/context/log, commit/push0.7.1 artifact and provide direct download. No runtime verification claim.
+- [x] Read-only review, fresh Java25 clean assemble, actual archive/class/localization/checksum inspection, update README/queue/context/log, commit/push0.7.1 artifact and provide direct download. No runtime verification claim.
 
 Repair balance: one configured log for a wooden/interior block or one configured cobblestone for a masonry/metal fixture; both halves of a bed are one paired repair unit. These are abstract construction materials consistent with the existing building contracts, not recovery of lost container contents. Inspection/repair must never overwrite player-added blocks or clear template air.
 
 ## Review
 
 Read-only review identified lost support when replacing a solid block with a nonempty partial shape, and unbudgeted discovery across all settlements every tick. Compared old/new support geometry and moved discovery into a budgeted incremental iterator. Re-review found no further confirmed important defects; compilation passed for the updated sources. The later death-loot request is queued separately and does not change this two-fix release scope.
+
+## Delivery
+
+Java25 clean assemble passed; actual JAR validated with62 classes and232 matching localization keys. Release commit `f3c3b93` pushed to `origin/feat/settlements-mvp`; GitHub confirms237480 bytes and blob `65c64d97363f9846b55c4ccfa466d43b1c2255f8`, matching the local artifact. The death-loot task remains queued. No runtime/tests were performed.
