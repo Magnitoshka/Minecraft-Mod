@@ -11,7 +11,7 @@ Execute in order. Preserve no-runtime/no-stand constraint; inspect code, compile
 7. [x] Lumber hut contains a physical storage and receives10 oak saplings once, on completion (user confirmed existing lumber hut, not a new builder hut).
 8. [x] Lumberjack collects saplings into hut storage, stops collecting each tree species when stored saplings reach64; stores harvested wood there.
 9. [x] Courier/warehouse master fetches wood and saplings from hut storage into settlement warehouse.
-10. [ ] Static review, clean assemble, artifact metadata/checksum, documentation and GitHub push. No runtime validation claim.
+10. [x] Static review, clean assemble, artifact metadata/checksum, documentation and GitHub push. No runtime validation claim.
 
 ## Resumed implementation / validation
 
@@ -25,3 +25,5 @@ Execute in order. Preserve no-runtime/no-stand constraint; inspect code, compile
 
 - The parallel session's socket/DNS limitations were local to that session. Final verification here completed a normal Java25 Gradle clean assemble; GitHub branch access was also verified. The fallback artifact is superseded by the Gradle-built JAR.
 - Additional static fixes: mutual citizen push suppression, immobility and explicit dialogue release on all card/tab/map transitions; current path-node traffic heading; higher/retained forestry navigation range and failed sapling target cooldown; barrel-local gift progress; detours to lengthen access routes for local elevation changes.
+
+Final delivery: normal Java25 clean assemble and archive checks passed; verified Gradle artifact204911 bytes/57 classes pushed in c92954ca8a338937ed3120f66d7511859937d357. GitHub API confirms the exact local artifact blob and size. All ten plan items completed without game/server/test stands.
