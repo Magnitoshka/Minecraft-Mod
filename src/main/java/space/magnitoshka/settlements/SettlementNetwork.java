@@ -10,7 +10,7 @@ import net.minecraftforge.network.PacketDistributor;
 import space.magnitoshka.settlements.domain.Settlement;
 
 public final class SettlementNetwork {
-    private static final SimpleChannel CHANNEL = ChannelBuilder.named(Settlements.MODID + ":main").networkProtocolVersion(6).simpleChannel();
+    private static final SimpleChannel CHANNEL = ChannelBuilder.named(Settlements.MODID + ":main").networkProtocolVersion(7).simpleChannel();
     // Detailed edit plans belong to the save, not the once-per-second UI snapshot.
     private static final com.google.gson.Gson SNAPSHOT_JSON=SettlementData.GSON.newBuilder()
         .addSerializationExclusionStrategy(new com.google.gson.ExclusionStrategy() {
@@ -30,7 +30,7 @@ public final class SettlementNetwork {
     public record Action(String action, String settlement, String resident, String text, long amount) {}
     public record Summary(String id, String name) {}
     public record Snapshot(Settlement settlement, List<Summary> settlements, long wallet,
-                           Map<String, double[]> positions, String selectedResident, boolean open, int radius, int capacity, int beds, double foodDays) {}
+                           Map<String, double[]> positions, String selectedResident, boolean open, int radius, int capacity, int beds, double foodDays, Map<String,int[]> buildingPrices, int nextPopulation) {}
     public static void init() {
         CHANNEL.messageBuilder(Action.class).direction(PacketFlow.SERVERBOUND)
             .encoder((m,b) -> { b.writeUtf(m.action,32); b.writeUtf(m.settlement,36); b.writeUtf(m.resident,36); b.writeUtf(m.text,64); b.writeLong(m.amount); })
@@ -98,6 +98,12 @@ public final class SettlementNetwork {
         }
         TerrainMap.tick(server,visible);
     }
+    private static Map<String,int[]> prices() {
+        var result=new LinkedHashMap<String,int[]>();
+        for(var type:space.magnitoshka.settlements.domain.BuildingType.values())for(int tier=1;tier<=3;tier++)
+            result.put(type.id+":"+tier,new int[]{SettlementConfig.price(type,tier,true),SettlementConfig.price(type,tier,false)});
+        return result;
+    }
     private static double foodDays(Settlement s) {
         if(s==null || s.residents.isEmpty())return 0;
         long food=s.foodCredit;
@@ -118,7 +124,7 @@ public final class SettlementNetwork {
             }
         }
         CHANNEL.send(new Snapshot(settlement,summaries,state.wallets.getOrDefault(player.getUUID(),0L),positions,resident,open,
-            settlement==null?SettlementConfig.RADIUS.get():Construction.radius(settlement),settlement==null?SettlementConfig.CAPACITY.get():Construction.capacity(settlement),settlement==null?0:settlement.bedCapacity,foodDays(settlement)),PacketDistributor.PLAYER.with(player));
+            settlement==null?SettlementConfig.RADIUS.get():Construction.radius(settlement),settlement==null?SettlementConfig.CAPACITY.get():Construction.capacity(settlement),settlement==null?0:settlement.bedCapacity,foodDays(settlement),prices(),settlement==null?0:Progression.population(settlement.level+1)),PacketDistributor.PLAYER.with(player));
         if(settlement!=null&&!(player.containerMenu instanceof WarehouseMenu)) {
             var terrain=TerrainMap.get(player.level().getServer(),settlement,Construction.radius(settlement));
             if(terrain!=null&&(open||terrain!=LAST_TERRAIN.get(player.getUUID()))) {

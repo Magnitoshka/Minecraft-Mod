@@ -34,6 +34,35 @@ public final class SettlementConfig {
     public static final ForgeConfigSpec.IntValue WORK_XP = integer("workerXpPerDelivery", 5, 0, 1000);
     public static final ForgeConfigSpec.IntValue PATH_BUDGET = integer("pathCalculationsPerTick", 8, 1, 64);
     public static final ForgeConfigSpec.IntValue TERRAIN_BUDGET = integer("terrainColumnsPerTick",256,32,2048);
+    public static final ForgeConfigSpec.IntValue VILLAGE_RADIUS=integer("villageRadius",80,8,256);
+    public static final ForgeConfigSpec.IntValue CITY_RADIUS=integer("cityRadius",128,8,256);
+    public static final ForgeConfigSpec.IntValue VILLAGE_RESIDENTS=integer("villageResidents",8,1,1024);
+    public static final ForgeConfigSpec.IntValue CITY_RESIDENTS=integer("cityResidents",20,1,1024);
+    public static final ForgeConfigSpec.IntValue WAREHOUSE_TWO=integer("warehouseTierTwoCapacity",3000,1,1000000);
+    public static final ForgeConfigSpec.IntValue WAREHOUSE_THREE=integer("warehouseTierThreeCapacity",8000,1,1000000);
+    public static final ForgeConfigSpec.DoubleValue BUILDING_SPEED=B.defineInRange("workSpeedPerBuildingTier",.25,0,10);
+    public static final java.util.Map<String,ForgeConfigSpec.IntValue> BUILDING_PRICES=new java.util.LinkedHashMap<>();
+    static {
+        for(var type:space.magnitoshka.settlements.domain.BuildingType.values())for(int tier=1;tier<=3;tier++) {
+            BUILDING_PRICES.put(type.id+":"+tier+":wood",integer("buildingPrices."+type.id+".tier"+tier+".logs",type.woodCost*tier,0,1000000));
+            BUILDING_PRICES.put(type.id+":"+tier+":stone",integer("buildingPrices."+type.id+".tier"+tier+".cobblestone",type.stoneCost*tier,0,1000000));
+        }
+    }
+    public static int price(space.magnitoshka.settlements.domain.BuildingType type,int tier,boolean wood) {
+        return BUILDING_PRICES.get(type.id+":"+Math.clamp(tier,1,3)+(wood?":wood":":stone")).get();
+    }
+    public static int tierCapacity(int tier) {return tier>=3?WAREHOUSE_THREE.get():tier==2?WAREHOUSE_TWO.get():WAREHOUSE_BONUS.get();}
+    public static int tierRadius(int tier) {return tier>=3?CITY_RADIUS.get():tier==2?VILLAGE_RADIUS.get():RADIUS.get();}
+    public static final java.util.Map<Integer,ForgeConfigSpec.IntValue[]> MINE_WEIGHTS=new java.util.LinkedHashMap<>();
+    static {
+        int[][] weights={{70,20,10,0,0},{60,22,15,3,0},{50,22,20,6,2}};
+        String[] resources={"stone","coal","iron","gold","diamond"};
+        for(int tier=1;tier<=3;tier++) {
+            var values=new ForgeConfigSpec.IntValue[5];
+            for(int i=0;i<5;i++)values[i]=integer("mineWeights.tier"+tier+"."+resources[i],weights[tier-1][i],0,10000);
+            MINE_WEIGHTS.put(tier,values);
+        }
+    }
     public static final ForgeConfigSpec SPEC = B.build();
     private static ForgeConfigSpec.IntValue integer(String key, int value, int min, int max) {
         return B.defineInRange(key, value, min, max);

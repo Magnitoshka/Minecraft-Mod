@@ -101,7 +101,7 @@ public final class WorldState {
                 String workplace="";
                 if(!required.isEmpty()) {
                     workplace=s.buildings.stream().filter(b->b.complete && b.type.equals(required))
-                        .filter(b->s.residents.stream().noneMatch(other->!other.id.equals(r.id) && b.id.equals(other.workplace)))
+                        .filter(b->s.residents.stream().filter(other->!other.id.equals(r.id) && b.id.equals(other.workplace)).count()<b.workplaces())
                         .map(b->b.id).findFirst().orElse(null);
                     if(workplace==null)return false;
                 }

@@ -20,7 +20,8 @@ public final class Construction {
     private static Result reject(String code) {return new Result(code,Component.translatable("message.smartsettlements.build_"+code));}
     public static Result request(ServerPlayer player,Settlement s,String typeId,int dx,int dz) {
         var type=BuildingType.byId(typeId);
-        if(type==null)return reject("invalid");
+        if(type==null||type==BuildingType.TOWN_HALL)return reject("invalid");
+        if(s.level<type.requiredSettlementLevel)return reject("locked");
         var level=(ServerLevel)player.level();
         if(!level.dimension().identifier().toString().equals(s.dimension))return reject("dimension");
         if(Math.abs((long)dx)>radius(s)||Math.abs((long)dz)>radius(s))return reject("territory");
@@ -45,14 +46,12 @@ public final class Construction {
             return new Result("site",message);
         }
         var plan=result.plan();int y=plan.y();
-        if(wood(s)<type.woodCost||s.resources.getOrDefault("minecraft:cobblestone",0)<type.stoneCost)return reject("materials");
+        int woodPrice=SettlementConfig.price(type,1,true),stonePrice=SettlementConfig.price(type,1,false);
+        if(!affordable(s,woodPrice,stonePrice))return reject("materials");
         // Reserve base building materials only; depth must not require a warehouse-sized prepayment.
-        var building=new Building(type,x,y,z,BuildingTemplates.pieces(type).size());
-        int remaining=type.woodCost;
-        for(var key:s.resources.keySet().stream().sorted().toList())if(isWood(key)&&remaining>0) {
-            int moved=s.withdraw(key,remaining);building.reserved.put(key,moved);remaining-=moved;
-        }
-        building.reserved.put("minecraft:cobblestone",s.withdraw("minecraft:cobblestone",type.stoneCost));
+        var building=new Building(type,x,y,z,BuildingTemplates.pieces(type,1,1).size());
+        building.templateVersion=1;building.priceWood=woodPrice;building.priceStone=stonePrice;
+        reserve(s,building,woodPrice,stonePrice);
         building.logisticsInitialized=true;
         building.columns=plan.columns();building.access=plan.access();building.preparationTotal=plan.steps();
         building.foundationRemaining=plan.fill();building.foundationPrepaid=false;building.hasStand=true;
@@ -62,6 +61,16 @@ public final class Construction {
         return new Result("ok",Component.translatable("message.smartsettlements.build_ok",
             Component.translatable("building.smartsettlements."+type.id),plan.fill()));
     }
+    public static boolean affordable(Settlement s,int wood,int stone) {
+        return wood(s)>=wood&&s.resources.getOrDefault("minecraft:cobblestone",0)>=stone;
+    }
+    public static void reserve(Settlement s,Building building,int wood,int stone) {
+        int remaining=wood;
+        for(var key:s.resources.keySet().stream().sorted().toList())if(isWood(key)&&remaining>0) {
+            int moved=s.withdraw(key,remaining);if(moved>0)building.reserved.put(key,moved);remaining-=moved;
+        }
+        building.reserved.put("minecraft:cobblestone",s.withdraw("minecraft:cobblestone",stone));
+    }
     public static boolean isWood(String key) {
         var item=BuiltInRegistries.ITEM.getValue(Identifier.parse(key));
         return item!=null&&item.getDefaultInstance().is(ItemTags.LOGS);
@@ -70,7 +79,11 @@ public final class Construction {
     public static List<BlockPos> beds(ServerLevel level,Settlement s) {
         var beds=new ArrayList<BlockPos>();
         for(int i=0;i<SettlementConfig.BEDS.get();i++)addBed(level,beds,new BlockPos(s.x-2+i*2,s.y,s.z+2));
-        for(var b:s.buildings)if(b.complete&&b.type.equals("house"))for(int x:new int[]{-1,1})addBed(level,beds,new BlockPos(b.x+x,b.y,b.z+1));
+        for(var b:s.buildings)if(b.type.equals("house")&&(b.complete||b.upgradeFromLevel>0)) {
+            for(var piece:BuildingTemplates.pieces(BuildingType.HOUSE,b.level,b.upgradeFromLevel>0?b.upgradeFromVersion:b.templateVersion))
+                if(piece.state().getBlock() instanceof BedBlock&&piece.state().getValue(BedBlock.PART)==BedPart.HEAD)
+                    addBed(level,beds,piece.at(new BlockPos(b.x,b.y,b.z)));
+        }
         return beds;
     }
     private static void addBed(ServerLevel level,List<BlockPos> beds,BlockPos head) {
@@ -95,8 +108,8 @@ public final class Construction {
     public static String bedKey(BlockPos p) {return p.getX()+","+p.getY()+","+p.getZ();}
     public static int radius(Settlement s) {return s.radius>0?s.radius:SettlementConfig.RADIUS.get();}
     public static int capacity(Settlement s) {
-        long count=s.buildings.stream().filter(b->b.complete&&b.type.equals("warehouse")).count();
-        return (int)Math.min(Integer.MAX_VALUE,SettlementConfig.CAPACITY.get()+count*SettlementConfig.WAREHOUSE_BONUS.get());
+        long bonus=s.buildings.stream().filter(b->(b.complete||b.upgradeFromLevel>0)&&b.type.equals("warehouse")).mapToLong(b->SettlementConfig.tierCapacity(b.level)).sum();
+        return (int)Math.min(Integer.MAX_VALUE,SettlementConfig.CAPACITY.get()+bonus);
     }
     public static void award(Resident r,int xp) {
         r.experience=(int)Math.min(Integer.MAX_VALUE,(long)r.experience+xp);

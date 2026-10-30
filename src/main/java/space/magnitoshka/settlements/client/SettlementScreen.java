@@ -24,7 +24,7 @@ public final class SettlementScreen extends Screen {
     private static final int INK=0xFF493923, GOLD=0xFFD3B074, LIGHT=0xFFF2E2BC;
     private static final String[] TABS={"overview","citizens","warehouse","construction"};
     private static final String[] PROFESSIONS={"unemployed","builder","lumberjack","miner","farmer","courier"};
-    private static final String[] TYPES={"house","warehouse","lumber_hut","mine","field"};
+    private static final String[] TYPES=java.util.Arrays.stream(BuildingType.values()).filter(t->t!=BuildingType.TOWN_HALL).map(t->t.id).toArray(String[]::new);
     private final TerrainTexture terrainTexture=new TerrainTexture();
     private SettlementNetwork.Snapshot snapshot;
     private space.magnitoshka.settlements.TerrainMap.Survey terrain;
@@ -85,7 +85,7 @@ public final class SettlementScreen extends Screen {
             residentIndex=resourcePage=0;panX=panZ=0;
         }
         if(!next.selectedResident().isEmpty()) {citizen=next.selectedResident();tab=1;peopleChanged=true;}
-        if(switched || peopleChanged || tab==0&&overviewPage==3 || tab==2 && resourcesChanged)rebuildWidgets();
+        if(switched || peopleChanged || tab==0&&overviewPage==3 || tab==3 || tab==0&&overviewPage==4 || tab==2 && resourcesChanged)rebuildWidgets();
     }
     private MedievalButton button(int x,int y,int w,Component label,Runnable action) {
         var button=new MedievalButton(x,y,w,18,label,action);
@@ -151,9 +151,18 @@ public final class SettlementScreen extends Screen {
     }
     private void overviewWidgets() {
         int x=panelX+8,w=panelW-16;
-        button(x,91,18,Component.literal("<"),()->{saveDrafts();overviewPage=Math.floorMod(overviewPage-1,4);rebuildWidgets();});
-        button(x+w-18,91,18,Component.literal(">"),()->{saveDrafts();overviewPage=(overviewPage+1)%4;rebuildWidgets();});
-        if(overviewPage==3) {
+        button(x,91,18,Component.literal("<"),()->{saveDrafts();overviewPage=Math.floorMod(overviewPage-1,5);rebuildWidgets();});
+        button(x+w-18,91,18,Component.literal(">"),()->{saveDrafts();overviewPage=(overviewPage+1)%5;rebuildWidgets();});
+        if(overviewPage==4) {
+            var s=snapshot.settlement();
+            var requirements=hallRequirements();
+            button(x,140,w,tr("upgradeRequirements"),()->{}).setTooltip(Tooltip.create(requirements));
+            if(s.level<3) {
+                var cost=cost("town_hall",s.level+1);
+                var upgrade=button(x,165,w,tr("upgradeSettlement",settlementName(s.level+1)),()->action("upgrade","hall",0));
+                upgrade.setTooltip(Tooltip.create(requirements.copy().append("\n").append(tr("buildingCost",cost[0],cost[1]))));
+            }
+        } else if(overviewPage==3) {
             var residents=snapshot.settlement().residents;int rows=rosterRows();
             rosterPage=Math.clamp(rosterPage,0,Math.max(0,(residents.size()-1)/rows));
             for(int i=rosterPage*rows;i<Math.min(residents.size(),(rosterPage+1)*rows);i++) {
@@ -175,6 +184,17 @@ public final class SettlementScreen extends Screen {
             button(x,160,w,tr("hire"),()->action("hire","",0)).setTooltip(Tooltip.create(tr("nearHall")));
             button(x,182,w,tr("buyBanner"),()->action("banner","",0)).setTooltip(Tooltip.create(tr("nearHall")));
         }
+    }
+    private Component settlementName(int level) {return tr("settlementTier."+level);}
+    private int[] cost(String type,int tier) {return snapshot.buildingPrices().getOrDefault(type+":"+tier,new int[]{0,0});}
+    private Component hallRequirements() {
+        var s=snapshot.settlement();if(s.level>=3)return tr("maxTier");
+        var result=tr("populationRequirement",s.residents.size(),snapshot.nextPopulation()).copy();
+        for(var entry:space.magnitoshka.settlements.Progression.requirements(s.level+1).entrySet().stream().sorted(java.util.Map.Entry.comparingByKey()).toList()) {
+            long count=s.buildings.stream().filter(b->b.complete&&b.type.equals(entry.getKey())).count();
+            result.append("\n").append(tr("buildingRequirement",buildingName(entry.getKey()),count,entry.getValue()));
+        }
+        return result;
     }
     private void citizenWidgets() {
         int x=panelX+8,w=panelW-16;
@@ -210,7 +230,13 @@ public final class SettlementScreen extends Screen {
     private void constructionWidgets() {
         int x=panelX+8,w=panelW-16;
         if(buildingDetails) {
-            button(x,195,w,tr("buildingCatalog"),()->{buildingDetails=false;selectedBuilding="";rebuildWidgets();});
+            var building=buildings().stream().filter(b->b.id.equals(selectedBuilding)).findFirst().orElse(null);
+            if(building!=null&&building.complete&&building.level<3) {
+                var cost=cost(building.type,building.level+1);
+                button(x,175,w,tr("upgradeBuilding",building.level+1),()->action("upgrade",building.id,0))
+                    .setTooltip(Tooltip.create(tr("buildingCost",cost[0],cost[1]).copy().append("\n").append(tr("upgradeNeedsTier",building.level+1))));
+            }
+            button(x,198,w,tr("buildingCatalog"),()->{buildingDetails=false;selectedBuilding="";rebuildWidgets();});
             return;
         }
         int rows=catalogRows(),pages=(TYPES.length+rows-1)/rows;
@@ -221,7 +247,9 @@ public final class SettlementScreen extends Screen {
                 buildChoice=buildChoice.equals(TYPES[index])?"":TYPES[index];selectedBuilding="";
             },()->buildChoice.equals(TYPES[index]));
             var type=BuildingType.byId(TYPES[i]);
-            blueprint.setTooltip(Tooltip.create(buildingName(TYPES[i]).copy().append("\n").append(tr("buildingCost",type.woodCost,type.stoneCost)).append("\n").append(tr("foundationCost"))));
+            blueprint.setTooltip(Tooltip.create(buildingName(TYPES[i]).copy().append("\n").append(tr("buildingCost",cost(type.id,1)[0],cost(type.id,1)[1])).append("\n").append(tr("foundationCost"))));
+            blueprint.active=snapshot.settlement().level>=type.requiredSettlementLevel;
+            if(!blueprint.active)blueprint.setTooltip(Tooltip.create(tr("buildingLocked",settlementName(type.requiredSettlementLevel))));
             addRenderableWidget(blueprint);
         }
         button(x,height-42,18,Component.literal("<"),()->{catalogPage=Math.floorMod(catalogPage-1,pages);rebuildWidgets();});
@@ -410,12 +438,13 @@ public final class SettlementScreen extends Screen {
     }
     private Component buildingState(Building b) {
         if(b.complete)return tr("buildingReady");
+        if(b.upgradeFromLevel>0)return tr("upgradingTo",b.targetLevel,b.totalSteps()<=0?0:(int)((long)b.completedSteps()*100/b.totalSteps()));
         int percent=b.totalSteps()<=0?0:(int)((long)Math.clamp(b.completedSteps(),0,b.totalSteps())*100/b.totalSteps());
         return tr("buildingProgress",percent);
     }
     private void drawOverview(GuiGraphicsExtractor g) {
         int x=panelX+8,w=panelW-16;
-        centered(g,tr(new String[]{"ledgerSummary","ledgerEconomy","ledgerManage","citizens"}[overviewPage]),x+21,96,w-42,GOLD);
+        centered(g,tr(new String[]{"ledgerSummary","ledgerEconomy","ledgerManage","citizens","development"}[overviewPage]),x+21,96,w-42,GOLD);
         var s=snapshot.settlement();
         if(overviewPage==0) {
             text(g,tr("population",s.residents.size(),snapshot.beds()),x,119,w,LIGHT);
@@ -427,6 +456,11 @@ public final class SettlementScreen extends Screen {
             text(g,tr("treasury",s.treasury),x,116,w,LIGHT);
             text(g,tr("wallet",snapshot.wallet()),x,130,w,LIGHT);
             text(g,tr("amount"),x,193,w,0xFFC4AA7D);
+        }
+        if(overviewPage==4) {
+            text(g,tr("currentSettlementTier",settlementName(s.level)),x,119,w,GOLD);
+            if(s.level<3) {var cost=cost("town_hall",s.level+1);text(g,tr("buildingCost",cost[0],cost[1]),x,191,w,LIGHT);}
+            else text(g,tr("maxTier"),x,191,w,LIGHT);
         }
         if(overviewPage==3) {
             var residents=s.residents;int rows=rosterRows();
@@ -467,7 +501,7 @@ public final class SettlementScreen extends Screen {
         int x=panelX+8,w=panelW-16;
         var b=buildings().stream().filter(value->value.id.equals(selectedBuilding)).findFirst().orElse(null);
         if(buildingDetails&&b!=null) {
-            text(g,buildingName(b.type),x,98,w,GOLD);
+            text(g,buildingName(b.type).copy().append(" · ").append(tr("buildingTier",b.level)),x,98,w,GOLD);
             text(g,buildingState(b),x,117,w,LIGHT);
             text(g,tr("status."+(b.status==null?"idle":b.status)),x,132,w,0xFFC4AA7D);
             text(g,Component.literal(b.x+", "+b.y+", "+b.z),x,147,w,LIGHT);
@@ -476,6 +510,7 @@ public final class SettlementScreen extends Screen {
             if(!b.complete&&b.foundationRemaining>0)text(g,tr("foundationRemaining",b.foundationRemaining),x,177,w,0xFFC4AA7D);
             var builder=snapshot.settlement().residents.stream().filter(r->r.id.toString().equals(b.assignedBuilder)).findFirst().orElse(null);
             if(builder!=null)text(g,tr("assignedBuilder",builder.name),x,220,w,GOLD);
+            if(b.complete&&height>267)text(g,tr("workplaceCount",b.workplaces()),x,235,w,LIGHT);
         } else {
             int rows=catalogRows(),pages=(TYPES.length+rows-1)/rows;
             long wood=snapshot.settlement().resources.entrySet().stream().filter(entry->{
@@ -487,10 +522,10 @@ public final class SettlementScreen extends Screen {
                 var type=BuildingType.byId(TYPES[i]);int y=111+(i-catalogPage*rows)*38;
                 g.item(new ItemStack(net.minecraft.world.item.Items.OAK_LOG),x,y);
                 g.item(new ItemStack(net.minecraft.world.item.Items.COBBLESTONE),x+w/2,y);
-                g.text(font,Integer.toString(type.woodCost),x+19,y+4,wood>=type.woodCost?0xFFB4D28A:0xFFFF9A85,false);
-                g.text(font,Integer.toString(type.stoneCost),x+w/2+19,y+4,stone>=type.stoneCost?0xFFB4D28A:0xFFFF9A85,false);
+                g.text(font,Integer.toString(cost(type.id,1)[0]),x+19,y+4,wood>=cost(type.id,1)[0]?0xFFB4D28A:0xFFFF9A85,false);
+                g.text(font,Integer.toString(cost(type.id,1)[1]),x+w/2+19,y+4,stone>=cost(type.id,1)[1]?0xFFB4D28A:0xFFFF9A85,false);
                 if(mouseX>=x&&mouseX<x+w&&mouseY>=y&&mouseY<y+17)
-                    g.setTooltipForNextFrame(tr("costAvailable",type.woodCost,wood,type.stoneCost,stone),mouseX,mouseY);
+                    g.setTooltipForNextFrame(tr("costAvailable",cost(type.id,1)[0],wood,cost(type.id,1)[1],stone),mouseX,mouseY);
             }
             centered(g,Component.literal((catalogPage+1)+" / "+pages),x+21,height-37,w-42,GOLD);
             text(g,tr(buildChoice.isEmpty()?"chooseBuilding":"placementHint"),x,height-17,w,0xFFC4AA7D);

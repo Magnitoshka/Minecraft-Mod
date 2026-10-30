@@ -9,6 +9,11 @@ public final class Building {
     public String id=UUID.randomUUID().toString();
     public String type="house",status="waiting_builder";
     public int x,y,z,progress,total;
+    public int level=1,targetLevel=1,templateVersion,upgradeFromLevel,upgradeFromVersion;
+    /** Price agreed when queued; live configuration changes never alter an active contract. */
+    public int priceWood=-1,priceStone=-1;
+    public int stagedWood,stagedStone;
+    public int workplaces() {return complete?Math.clamp(level,1,3):0;}
     public List<SiteEdit> preparation=new ArrayList<>();
     public List<SiteColumn> columns=new ArrayList<>();
     public List<SitePoint> access=new ArrayList<>();

@@ -24,10 +24,17 @@ public final class CitizenWork {
     private BlockPos treeBase;
     private String treeSpecies;
     private String lastProfession="";
+    private int lastToolTier;
     public void tick(CitizenEntity citizen,ServerLevel level,SettlementData data,Settlement s,Resident r) {
-        if(!r.profession.equals(lastProfession)) {
+        int toolTier=r.profession.equals("builder")?s.level:s.buildings.stream().filter(b->b.id.equals(r.workplace)).mapToInt(b->b.level).findFirst().orElse(1);
+        if(!r.profession.equals(lastProfession)||lastToolTier!=toolTier) {
+            lastToolTier=toolTier;
             treeLogs.clear();treeBase=null;lastProfession=r.profession;citizen.getNavigation().stop();
-            var tool=switch(r.profession) {case "builder","lumberjack"->Items.STONE_AXE;case "miner"->Items.STONE_PICKAXE;case "farmer"->Items.STONE_HOE;default->Items.AIR;};
+            var tool=switch(r.profession) {
+                case "builder","lumberjack"->toolTier>=3?Items.DIAMOND_AXE:toolTier==2?Items.IRON_AXE:Items.STONE_AXE;
+                case "miner"->toolTier>=3?Items.DIAMOND_PICKAXE:toolTier==2?Items.IRON_PICKAXE:Items.STONE_PICKAXE;
+                case "farmer"->toolTier>=3?Items.DIAMOND_HOE:toolTier==2?Items.IRON_HOE:Items.STONE_HOE;
+                default->Items.AIR;};
             citizen.setItemSlot(EquipmentSlot.MAINHAND,tool==Items.AIR?ItemStack.EMPTY:new ItemStack(tool));
         }
         boolean previousCargo=java.util.Arrays.stream(r.builderInventory.slots).anyMatch(slot->slot.count>0&&
@@ -69,17 +76,18 @@ public final class CitizenWork {
         if(!(job.access.isEmpty()?approach(citizen,entrance,r,4):approachAccess(citizen,s,job,job.access.size()-1,r))) {if(r.workStatus.equals("blocked"))block(level,data,s,r,job);return;}
         if(job.prepared<job.preparation.size()) {prepare(citizen,level,data,s,r,job);return;}
         if(!r.supplyStage.equals("base")) {r.fetching=true;supplies(citizen,level,data,s,r,job);return;}
-        var pieces=BuildingTemplates.pieces(type);
+        var pieces=BuildingTemplates.pieces(job);
         int count=Math.max(1,(int)Math.floor(SettlementConfig.BUILD_RATE.get()*r.workEfficiency()));
         boolean changed=false;
         for(int i=0;i<count&&job.progress<pieces.size();i++) {
             var piece=pieces.get(job.progress);var at=piece.at(origin);
+            BuilderLogistics.stageBase(r,job);
             if(!BuilderLogistics.hasBase(r,job)) {r.fetching=true;supplies(citizen,level,data,s,r,job);break;}
             if(!Construction.canChange(level,at,s.owner)) {block(level,data,s,r,job);break;}
             var current=level.getBlockState(at);
             // Resume safely if the previous write was saved before its progress cursor.
             if(!BuildingTemplates.matches(current,piece.state())) {
-                if(level.getBlockEntity(at)!=null || current.getDestroySpeed(level,at)<0 || !level.getFluidState(at).isEmpty() || (piece.y()>=0&&!SitePreparation.cover(current))) {
+                if(level.getBlockEntity(at)!=null || current.getDestroySpeed(level,at)<0 || !level.getFluidState(at).isEmpty() || (piece.y()>=0&&!SitePreparation.cover(current)&&!Progression.replaceable(level,job,piece,current))) {
                     block(level,data,s,r,job);break;
                 }
                 if(piece.y()<0 && (!current.isFaceSturdy(level,at,net.minecraft.core.Direction.UP)
@@ -104,6 +112,7 @@ public final class CitizenWork {
             }
             if(missing>=0) {job.progress=missing;block(level,data,s,r,job);}
             else {
+                Progression.finish(s,job,data.state);
                 job.complete=true;job.assignedBuilder="";r.taskBuilding="";job.status="complete";job.preparation.clear();job.columns.clear();changed=true;r.workStatus="idle";
                 SettlementNetwork.ownerNotice(level.getServer(),s,true,"action.smartsettlements.construction_complete",net.minecraft.network.chat.Component.translatable("building.smartsettlements."+job.type));
             }
@@ -276,11 +285,15 @@ public final class CitizenWork {
         var entrance=new BlockPos(workplace.x,workplace.y,workplace.z-BuildingType.byId(workplace.type).halfDepth-1);
         if(!r.profession.equals("lumberjack")&&!approach(citizen,entrance,r,4))return;
         r.workTicks++;data.setDirty();
-        if(r.workTicks<Math.max(1,(int)Math.ceil(seconds/r.workEfficiency()))) {r.workStatus="working";return;}
+        if(r.workTicks<Math.max(1,(int)Math.ceil(seconds/(r.workEfficiency()*Progression.speed(workplace))))) {r.workStatus="working";return;}
         switch(r.profession) {
             case "miner" -> {
-                        int roll=citizen.getRandom().nextInt(100);
-                String key=roll<70?"minecraft:cobblestone":roll<90?"minecraft:coal":"minecraft:iron_ore";
+                var weights=SettlementConfig.MINE_WEIGHTS.get(Math.clamp(workplace.level,1,3));
+                int sum=java.util.Arrays.stream(weights).mapToInt(value->value.get()).sum();
+                if(sum==0) {r.workStatus="no_output";return;}
+                int roll=citizen.getRandom().nextInt(sum),choice=0;
+                while(choice<weights.length-1&&roll>=weights[choice].get())roll-=weights[choice++].get();
+                String key=new String[]{"minecraft:cobblestone","minecraft:coal","minecraft:iron_ore","minecraft:gold_ore","minecraft:diamond"}[choice];
                 if(s.deposit(key,1,Construction.capacity(s))>0) {
                     r.workTicks=0;r.workStatus="working";Construction.award(r,SettlementConfig.WORK_XP.get());
                     citizen.swingForAttack(InteractionHand.MAIN_HAND);data.setDirty();

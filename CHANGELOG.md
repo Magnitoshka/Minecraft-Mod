@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.0+26.3 — 2026-10-30
+
+Persistent building upgrades and town-hall progression with prerequisites and settlement unlocks. Added all specified building kinds with three template tiers, server-configured immutable contract prices, level-based beds/workplaces/storage/speed/tools and mine tables. Preserved legacy houses, paid jobs and unchanged containers. High configured material prices are delivered through multiple trips into persisted per-step staging. Map development page, upgrade buttons, authoritative prices and RU/EN text; protocol7. Fixed-size fields and later-stage professions/combat/trade remain future work.
+
 ## 0.6.0+26.3 — 2026-10-30
 
 Exclusive persistent builder assignments and four-slot material trips, owner conversations that stop residents, traffic yielding, local-height sites with sloped access preserving existing roads, a paginated resident roster, physical lumber-hut barrels with a one-time gift of10 oak saplings, real wood/sapling collection and warehouse couriers. Production cargo stays carried on profession changes; departures leave physical items rather than bypassing storage capacity. Static review, Java25 clean assemble and SHA256 verification passed. Final delivery uses the Gradle-built JAR; earlier cached fallback packaging was superseded. No game/server/test runtime.

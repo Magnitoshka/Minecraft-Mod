@@ -225,6 +225,10 @@ public final class ServerSettlements {
                 var message=result.message();
                 if(ok)success=message;else SettlementNetwork.notice(p,s.id,false,message);
             }
+            case "upgrade" -> {
+                var result=Progression.request(p,s,request.text());ok=result.ok();
+                if(ok)success=result.message();else SettlementNetwork.notice(p,s.id,false,result.message());
+            }
             case "depositCoins", "withdrawCoins" -> {
                 ok=world.transfer(p.getUUID(),s.id,request.amount(),request.action().equals("depositCoins"));
                 if(ok)success=Component.translatable("action.smartsettlements."+request.action(),request.amount());
@@ -280,7 +284,7 @@ public final class ServerSettlements {
         if(ok) {
             data.setDirty();
             if(success!=null)SettlementNetwork.notice(p,s.id,true,success);
-        } else if(!request.action().equals("build"))fail(p,"action");
+        } else if(!java.util.Set.of("build","upgrade").contains(request.action()))fail(p,"action");
         if(p.containerMenu instanceof WarehouseMenu)SettlementNetwork.refreshWarehouse(p,s.id);else SettlementNetwork.refresh(p);
     }
     static int countBeds(ServerLevel level, Settlement s) {return Construction.beds(level,s).size();}
