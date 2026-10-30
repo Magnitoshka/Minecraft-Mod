@@ -160,5 +160,12 @@
   "action.smartsettlements.foundation_materials": "%s: foundation cobblestone ran out. The builder resumes automatically when the warehouse receives more.",
   "action.smartsettlements.construction_blocked_at": "%s: work stopped. Block %s at %s, %s, %s changed, is protected or obstructs work.",
   "ui.smartsettlements.status.materials": "Waiting for foundation cobblestone",
-  "ui.smartsettlements.foundationRemaining": "Fill: up to %s cobblestone remaining"
+  "ui.smartsettlements.foundationRemaining": "Fill: up to %s cobblestone remaining",
+  "ui.smartsettlements.carriedInventory": "Inventory · 4 × 64",
+  "ui.smartsettlements.assignedSite": "Site: %s",
+  "ui.smartsettlements.assignedBuilder": "Builder: %s",
+  "ui.smartsettlements.status.fetching": "Fetching materials",
+  "ui.smartsettlements.status.loading": "Loading materials",
+  "action.smartsettlements.builder_loaded": "%s collected %s items from storage.",
+  "action.smartsettlements.builder_materials": "%s: required materials are missing. The builder is waiting for supplies."
 }

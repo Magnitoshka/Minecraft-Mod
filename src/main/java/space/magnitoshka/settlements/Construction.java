@@ -47,10 +47,13 @@ public final class Construction {
         var plan=result.plan();int y=plan.y();
         if(wood(s)<type.woodCost||s.resources.getOrDefault("minecraft:cobblestone",0)<type.stoneCost)return reject("materials");
         // Reserve base building materials only; depth must not require a warehouse-sized prepayment.
-        int remaining=type.woodCost;
-        for(var key:s.resources.keySet().stream().sorted().toList())if(isWood(key)&&remaining>0)remaining-=s.withdraw(key,remaining);
-        s.withdraw("minecraft:cobblestone",type.stoneCost);
         var building=new Building(type,x,y,z,BuildingTemplates.pieces(type).size());
+        int remaining=type.woodCost;
+        for(var key:s.resources.keySet().stream().sorted().toList())if(isWood(key)&&remaining>0) {
+            int moved=s.withdraw(key,remaining);building.reserved.put(key,moved);remaining-=moved;
+        }
+        building.reserved.put("minecraft:cobblestone",s.withdraw("minecraft:cobblestone",type.stoneCost));
+        building.logisticsInitialized=true;
         building.columns=plan.columns();building.access=plan.access();building.preparationTotal=plan.steps();
         building.foundationRemaining=plan.fill();building.foundationPrepaid=false;building.hasStand=true;
         var entrance=plan.access().getLast();
@@ -59,7 +62,7 @@ public final class Construction {
         return new Result("ok",Component.translatable("message.smartsettlements.build_ok",
             Component.translatable("building.smartsettlements."+type.id),plan.fill()));
     }
-    private static boolean isWood(String key) {
+    public static boolean isWood(String key) {
         var item=BuiltInRegistries.ITEM.getValue(Identifier.parse(key));
         return item!=null&&item.getDefaultInstance().is(ItemTags.LOGS);
     }

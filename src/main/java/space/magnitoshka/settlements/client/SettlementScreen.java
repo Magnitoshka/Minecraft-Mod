@@ -23,7 +23,7 @@ import space.magnitoshka.settlements.domain.Resident;
 public final class SettlementScreen extends Screen {
     private static final int INK=0xFF493923, GOLD=0xFFD3B074, LIGHT=0xFFF2E2BC;
     private static final String[] TABS={"overview","citizens","warehouse","construction"};
-    private static final String[] PROFESSIONS={"unemployed","builder","lumberjack","miner","farmer"};
+    private static final String[] PROFESSIONS={"unemployed","builder","lumberjack","miner","farmer","courier"};
     private static final String[] TYPES={"house","warehouse","lumber_hut","mine","field"};
     private final TerrainTexture terrainTexture=new TerrainTexture();
     private SettlementNetwork.Snapshot snapshot;
@@ -251,7 +251,7 @@ public final class SettlementScreen extends Screen {
         g.fill(panelX+7,87,panelX+panelW-7,88,0xFF705334);
         switch(tab) {
             case 0 -> drawOverview(g);
-            case 1 -> drawCitizen(g);
+            case 1 -> drawCitizen(g,mouseX,mouseY);
             case 2 -> {
                 text(g,tr("capacity",snapshot.settlement().stored(),snapshot.capacity()),panelX+8,92,panelW-16,LIGHT);
                 text(g,tr("storageHint"),panelX+8,height-30,panelW-16,0xFFC4AA7D);
@@ -416,7 +416,7 @@ public final class SettlementScreen extends Screen {
         }
         text(g,tr(overviewPage==2?"nearHall":"ledgerHint"),x,height-30,w,0xFFC4AA7D);
     }
-    private void drawCitizen(GuiGraphicsExtractor g) {
+    private void drawCitizen(GuiGraphicsExtractor g,int mouseX,int mouseY) {
         int x=panelX+8,w=panelW-16;
         var r=resident();
         if(r==null) {text(g,tr("noCitizens"),x,116,w,LIGHT);return;}
@@ -426,7 +426,21 @@ public final class SettlementScreen extends Screen {
         text(g,tr("citizenMood",r.mood,r.hungerDays),x,144,w,LIGHT);
         String work=r.workStatus==null||r.workStatus.isEmpty()?"idle":r.workStatus;
         text(g,tr("status."+work),x,158,w,0xFFC4AA7D);
-        text(g,tr("assignProfession"),x,199,w,0xFFC4AA7D);
+        text(g,tr("carriedInventory"),x,199,w,0xFFC4AA7D);
+        for(int i=0;i<4;i++) {
+            int sx=x+i*23,sy=212;var slot=r.builderInventory.slots[i];
+            g.fill(sx,sy,sx+21,sy+21,0xFF241C15);border(g,sx,sy,sx+21,sy+21,0xFF997646);
+            if(slot.count<=0)continue;
+            var item=BuiltInRegistries.ITEM.getValue(Identifier.parse(slot.item));
+            var stack=new ItemStack(item);g.item(stack,sx+2,sy+2);
+            String amount=Integer.toString(slot.count);g.text(font,amount,sx+20-font.width(amount),sy+13,0xFFFFFFFF,true);
+            if(mouseX>=sx&&mouseX<sx+21&&mouseY>=sy&&mouseY<sy+21)
+                g.setTooltipForNextFrame(item.getName(stack).copy().append(" × "+slot.count),mouseX,mouseY);
+        }
+        if(height>=275&&!r.taskBuilding.isEmpty()) {
+            var job=buildings().stream().filter(b->b.id.equals(r.taskBuilding)).findFirst().orElse(null);
+            if(job!=null)text(g,tr("assignedSite",buildingName(job.type)),x,242,w,GOLD);
+        }
     }
     private void drawConstruction(GuiGraphicsExtractor g,int mouseX,int mouseY) {
         int x=panelX+8,w=panelW-16;
@@ -439,6 +453,8 @@ public final class SettlementScreen extends Screen {
             int progress=b.totalSteps()<=0?0:(int)((long)Math.clamp(b.completedSteps(),0,b.totalSteps())*(w-2)/b.totalSteps());
             g.fill(x,161,x+w,167,0xFF211B14);g.fill(x+1,162,x+1+progress,166,0xFFC8A05D);
             if(!b.complete&&b.foundationRemaining>0)text(g,tr("foundationRemaining",b.foundationRemaining),x,177,w,0xFFC4AA7D);
+            var builder=snapshot.settlement().residents.stream().filter(r->r.id.toString().equals(b.assignedBuilder)).findFirst().orElse(null);
+            if(builder!=null)text(g,tr("assignedBuilder",builder.name),x,220,w,GOLD);
         } else {
             int rows=catalogRows(),pages=(TYPES.length+rows-1)/rows;
             long wood=snapshot.settlement().resources.entrySet().stream().filter(entry->{

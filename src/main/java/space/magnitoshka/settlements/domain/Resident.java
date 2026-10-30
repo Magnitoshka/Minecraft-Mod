@@ -15,6 +15,9 @@ public final class Resident {
     public String bed = "";
     public String workplace = "";
     public String taskBuilding = "";
+    public BuilderInventory builderInventory=new BuilderInventory();
+    public String cargoJob="",supplyStage="";
+    public boolean fetching,supplyReady;
     public String workStatus = "idle";
     public int workTicks;
     public int carriedWheat;

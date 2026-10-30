@@ -129,6 +129,7 @@ public final class ServerSettlements {
         for (var s:data.state.settlements.values()) {
             var level=server.getLevel(ResourceKey.create(Registries.DIMENSION,Identifier.parse(s.dimension)));
             if (level==null) continue;
+            if(space.magnitoshka.settlements.domain.BuilderAssignments.reconcile(s))data.setDirty();
             if(!s.roofBannerCleaned) {
                 var flag=new BlockPos(s.x,s.y+5,s.z);
                 if(level.hasChunkAt(flag)) {

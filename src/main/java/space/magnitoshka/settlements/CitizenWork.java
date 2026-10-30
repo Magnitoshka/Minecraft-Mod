@@ -17,7 +17,7 @@ import space.magnitoshka.settlements.domain.*;
 
 /** One bounded work step per second, per materialized citizen. Never runs on the client. */
 public final class CitizenWork {
-    private int searchCursor,fieldCursor,buildRetryCursor;
+    private int searchCursor,fieldCursor;
     private List<int[]> searchOffsets=List.of();
     private final ArrayDeque<BlockPos> treeLogs=new ArrayDeque<>();
     private BlockPos treeBase;
@@ -25,7 +25,7 @@ public final class CitizenWork {
     private String lastProfession="";
     public void tick(CitizenEntity citizen,ServerLevel level,SettlementData data,Settlement s,Resident r) {
         if(!r.profession.equals(lastProfession)) {
-            treeLogs.clear();treeBase=null;r.taskBuilding="";lastProfession=r.profession;citizen.getNavigation().stop();
+            treeLogs.clear();treeBase=null;lastProfession=r.profession;citizen.getNavigation().stop();
             var tool=switch(r.profession) {case "builder","lumberjack"->Items.STONE_AXE;case "miner"->Items.STONE_PICKAXE;case "farmer"->Items.STONE_HOE;default->Items.AIR;};
             citizen.setItemSlot(EquipmentSlot.MAINHAND,tool==Items.AIR?ItemStack.EMPTY:new ItemStack(tool));
         }
@@ -37,13 +37,16 @@ public final class CitizenWork {
         }
     }
     private void build(CitizenEntity citizen,ServerLevel level,SettlementData data,Settlement s,Resident r) {
-        var pending=s.buildings.stream().filter(b->!b.complete).toList();
-        var blocked=pending.stream().filter(b->"blocked".equals(b.status)||"materials".equals(b.status)).toList();
-        var active=pending.stream().filter(b->!"blocked".equals(b.status)&&!"materials".equals(b.status)).findFirst().orElse(null);
-        var job=active;
-        if(!blocked.isEmpty()&&(active==null||citizen.tickCount%100==0))job=blocked.get(Math.floorMod(buildRetryCursor++,blocked.size()));
-        if(job==null) {r.workStatus="idle";r.taskBuilding="";return;}
-        r.taskBuilding=job.id;
+        if(BuilderAssignments.reconcile(s))data.setDirty();
+        if(r.taskBuilding.isEmpty()&&!r.cargoJob.isEmpty()) {
+            var previous=s.buildings.stream().filter(b->b.id.equals(r.cargoJob)).findFirst().orElse(null);
+            if(r.builderInventory.size()>0&&!returnToHall(citizen,s,previous,r)) {r.workStatus="fetching";return;}
+            BuilderAssignments.unload(s,r);data.setDirty();
+        }
+        var job=BuilderAssignments.claim(s,r);
+        if(job==null) {r.workStatus="idle";return;}
+        BuilderLogistics.initialize(job);data.setDirty();
+        if(!r.supplyReady||r.fetching) {supplies(citizen,level,data,s,r,job);return;}
         var type=BuildingType.byId(job.type);
         if(type==null) {block(level,data,s,r,job);return;}
         BlockPos origin=new BlockPos(job.x,job.y,job.z);
@@ -51,11 +54,13 @@ public final class CitizenWork {
         if(job.columnCursor<job.columns.size()) {prepareColumns(citizen,level,data,s,r,job);return;}
         if(!(job.access.isEmpty()?approach(citizen,entrance,r,4):approachAccess(citizen,s,job,job.access.size()-1,r))) {if(r.workStatus.equals("blocked"))block(level,data,s,r,job);return;}
         if(job.prepared<job.preparation.size()) {prepare(citizen,level,data,s,r,job);return;}
+        if(!r.supplyStage.equals("base")) {r.fetching=true;supplies(citizen,level,data,s,r,job);return;}
         var pieces=BuildingTemplates.pieces(type);
         int count=Math.max(1,(int)Math.floor(SettlementConfig.BUILD_RATE.get()*r.workEfficiency()));
         boolean changed=false;
         for(int i=0;i<count&&job.progress<pieces.size();i++) {
             var piece=pieces.get(job.progress);var at=piece.at(origin);
+            if(!BuilderLogistics.hasBase(r,job)) {r.fetching=true;supplies(citizen,level,data,s,r,job);break;}
             if(!Construction.canChange(level,at,s.owner)) {block(level,data,s,r,job);break;}
             var current=level.getBlockState(at);
             // Resume safely if the previous write was saved before its progress cursor.
@@ -74,7 +79,7 @@ public final class CitizenWork {
                     SettlementNetwork.ownerNotice(level.getServer(),s,true,"action.smartsettlements.construction_started",net.minecraft.network.chat.Component.translatable("building.smartsettlements."+job.type));
                 }
             }
-            job.progress++;changed=true;r.workStatus="working";job.status="building";
+            BuilderLogistics.spendBase(r,job);job.progress++;changed=true;r.workStatus="working";job.status="building";
             Construction.award(r,SettlementConfig.BUILDER_XP.get());
         }
         if(job.progress>=pieces.size()) {
@@ -85,7 +90,7 @@ public final class CitizenWork {
             }
             if(missing>=0) {job.progress=missing;block(level,data,s,r,job);}
             else {
-                job.complete=true;job.status="complete";job.preparation.clear();job.columns.clear();changed=true;r.workStatus="idle";
+                job.complete=true;job.assignedBuilder="";r.taskBuilding="";job.status="complete";job.preparation.clear();job.columns.clear();changed=true;r.workStatus="idle";
                 SettlementNetwork.ownerNotice(level.getServer(),s,true,"action.smartsettlements.construction_complete",net.minecraft.network.chat.Component.translatable("building.smartsettlements."+job.type));
             }
         }
@@ -116,15 +121,10 @@ public final class CitizenWork {
                     :SitePreparation.removable(state)&&level.getFluidState(at).isEmpty()
                         &&original;
                 if(!safe||state.getDestroySpeed(level,at)<0) {blockAt(level,data,s,r,job,at);return false;}
-                if(fill&&!job.foundationPrepaid&&s.resources.getOrDefault("minecraft:cobblestone",0)<1) {
-                    boolean notify=!job.status.equals("materials");job.status="materials";r.workStatus="materials";data.setDirty();
-                    if(notify)SettlementNetwork.ownerNotice(level.getServer(),s,false,"action.smartsettlements.foundation_materials",
-                        net.minecraft.network.chat.Component.translatable("building.smartsettlements."+job.type));
-                    return false;
-                }
+                if(fill&&!BuilderLogistics.hasFill(r,job)) {r.fetching=true;supplies(citizen,level,data,s,r,job);return false;}
                 // Direct replacement prevents ice turning into water, unlike breaking the ice block.
                 if(!level.setBlock(at,fill?Blocks.COBBLESTONE.defaultBlockState():Blocks.AIR.defaultBlockState(),3)) {blockAt(level,data,s,r,job,at);return false;}
-                if(fill&&!job.foundationPrepaid)s.withdraw("minecraft:cobblestone",1);
+                if(fill)BuilderLogistics.spendFill(r,job);
                 if(!fill&&state.is(BlockTags.LOGS))s.deposit(BuiltInRegistries.ITEM.getKey(state.getBlock().asItem()).toString(),1,Construction.capacity(s));
                 preparationNotice(level,s,job);
             }
@@ -137,6 +137,45 @@ public final class CitizenWork {
             Construction.award(r,SettlementConfig.BUILDER_XP.get());citizen.swingForAttack(InteractionHand.MAIN_HAND);
         }
         return job.columnCursor>=job.columns.size();
+    }
+    private boolean supplies(CitizenEntity citizen,ServerLevel level,SettlementData data,Settlement s,Resident r,Building job) {
+        r.fetching=true;
+        if(!returnToHall(citizen,s,job,r)) {r.workStatus="fetching";job.status="fetching";return false;}
+        var barrel=new BlockPos(s.x+3,s.y,s.z);
+        if(!level.getBlockState(barrel).is(Blocks.BARREL)) {
+            r.workStatus="materials";job.status="materials";data.setDirty();return false;
+        }
+        boolean foundation=BuilderLogistics.hasFoundationWork(job);
+        int loaded=BuilderLogistics.load(s,r,job,foundation);
+        r.supplyStage=foundation?"foundation":"base";
+        if(loaded==0&&(BuilderLogistics.hasFoundationWork(job)||!BuilderLogistics.hasBase(r,job))) {
+            boolean notify=!job.status.equals("materials");r.workStatus="materials";job.status="materials";data.setDirty();
+            if(notify)SettlementNetwork.ownerNotice(level.getServer(),s,false,"action.smartsettlements.builder_materials",
+                net.minecraft.network.chat.Component.translatable("building.smartsettlements."+job.type));
+            return false;
+        }
+        r.supplyReady=true;r.fetching=false;r.workStatus="loading";job.status="loading";data.setDirty();
+        if(loaded>0)SettlementNetwork.ownerNotice(level.getServer(),s,true,"action.smartsettlements.builder_loaded",r.name,loaded);
+        return false;
+    }
+    private boolean returnToHall(CitizenEntity citizen,Settlement s,Building job,Resident r) {
+        var storage=new BlockPos(s.x+2,s.y,s.z);
+        if(citizen.distanceToSqr(storage.getX()+.5,storage.getY(),storage.getZ()+.5)<=4)return true;
+        boolean inside=Math.abs(citizen.getX()-(s.x+.5))<3.5&&Math.abs(citizen.getZ()-(s.z+.5))<2.5&&Math.abs(citizen.getY()-s.y)<2;
+        if(inside)return approach(citizen,storage,r,2);
+        if(job!=null&&!job.access.isEmpty()) {
+            int closest=0;double distance=Double.MAX_VALUE;
+            for(int i=0;i<job.access.size();i++) {
+                var p=job.access.get(i);double d=citizen.distanceToSqr(p.x()+.5,p.y(),p.z()+.5);
+                if(d<distance) {closest=i;distance=d;}
+            }
+            var start=job.access.getFirst();
+            if(citizen.distanceToSqr(start.x()+.5,start.y(),start.z()+.5)>9) {
+                var back=job.access.get(distance>16?closest:Math.max(0,closest-4));
+                approach(citizen,new BlockPos(back.x(),back.y(),back.z()),r,1);return false;
+            }
+        }
+        return approach(citizen,storage,r,2);
     }
     private void preparationNotice(ServerLevel level,Settlement s,Building job) {
         if(job.preparationStarted)return;
@@ -183,9 +222,11 @@ public final class CitizenWork {
             if(!alreadyDone) {
                 boolean safe=edit.fill?state.canBeReplaced()&&level.getBlockState(at.below()).isFaceSturdy(level,at.below(),net.minecraft.core.Direction.UP):SitePreparation.removable(state)
                     &&BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString().equals(edit.expected);
+                if(edit.fill&&!BuilderLogistics.hasFill(r,job)) {r.fetching=true;supplies(citizen,level,data,s,r,job);return;}
                 if(!safe||!level.setBlock(at,edit.fill?Blocks.COBBLESTONE.defaultBlockState():Blocks.AIR.defaultBlockState(),3)) {
                     block(level,data,s,r,job);return;
                 }
+                if(edit.fill)BuilderLogistics.spendFill(r,job);
                 if(!edit.fill&&state.is(BlockTags.LOGS)) {
                     var key=BuiltInRegistries.ITEM.getKey(state.getBlock().asItem()).toString();
                     s.deposit(key,1,Construction.capacity(s));

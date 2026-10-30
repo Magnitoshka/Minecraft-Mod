@@ -25,6 +25,9 @@ public final class CitizenEntity extends PathfinderMob {
     private UUID settlementId;
     private final CitizenWork work = new CitizenWork();
     private boolean nightRoutine;
+    private final CitizenTraffic traffic=new CitizenTraffic();
+    private boolean talking;
+    public boolean isTalking() {return talking;}
     public CitizenEntity(EntityType<? extends CitizenEntity> type, Level level) { super(type,level); setPersistenceRequired(); }
     public static AttributeSupplier.Builder attributes() {
         return createMobAttributes().add(Attributes.MAX_HEALTH,20).add(Attributes.MOVEMENT_SPEED,.25).add(Attributes.FOLLOW_RANGE,24);
@@ -46,12 +49,17 @@ public final class CitizenEntity extends PathfinderMob {
     }
     @Override public void tick() {
         super.tick();
-        if (!(level() instanceof ServerLevel server) || settlementId==null || tickCount%20!=0) return;
+        if (!(level() instanceof ServerLevel server) || settlementId==null) return;
+        talking=SettlementNetwork.talking(this);
+        if(talking) {getNavigation().stop();if(isSleeping())stopSleeping();}
+        boolean yielding=!talking&&traffic.tick(this,server);
+        if(tickCount%20!=0)return;
         var data=SettlementData.get(server.getServer());
         var s=data.state.settlements.get(settlementId);
         if (s==null) { discard(); return; }
         var r=s.residents.stream().filter(v->v.id.equals(getUUID())).findFirst().orElse(null);
         if (r==null) { discard(); return; }
+        if(talking||yielding) {r.workStatus=talking?"talking":"yielding";updateActivity(s,r);return;}
         BlockPos bed=null;
         if(r.bed!=null&&!r.bed.isEmpty()) {
             String[] xyz=r.bed.split(",");
@@ -98,7 +106,7 @@ public final class CitizenEntity extends PathfinderMob {
     @Override protected InteractionResult mobInteract(Player player, InteractionHand hand) {
         if (player instanceof ServerPlayer sp && settlementId!=null) {
             var s=SettlementData.get(sp.level().getServer()).state.settlements.get(settlementId);
-            if (s!=null && s.owner.equals(sp.getUUID())) SettlementNetwork.open(sp,s.id,getUUID());
+            if (s!=null && s.owner.equals(sp.getUUID())) {getNavigation().stop();SettlementNetwork.open(sp,s.id,getUUID());}
             else sp.sendSystemMessage(Component.translatable("message.smartsettlements.owner"));
         }
         return InteractionResult.SUCCESS;
@@ -107,7 +115,7 @@ public final class CitizenEntity extends PathfinderMob {
         if (level() instanceof ServerLevel server && settlementId!=null) {
             var data=SettlementData.get(server.getServer());
             var s=data.state.settlements.get(settlementId);
-            if (s!=null) { s.residents.removeIf(r->r.id.equals(getUUID())); data.setDirty(); }
+            if (s!=null) { s.residents.stream().filter(r->r.id.equals(getUUID())).findFirst().ifPresent(r->space.magnitoshka.settlements.domain.BuilderAssignments.release(s,r));s.residents.removeIf(r->r.id.equals(getUUID())); data.setDirty(); }
         }
         super.die(cause);
     }

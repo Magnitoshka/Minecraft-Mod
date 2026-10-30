@@ -10,16 +10,17 @@ import net.minecraftforge.network.PacketDistributor;
 import space.magnitoshka.settlements.domain.Settlement;
 
 public final class SettlementNetwork {
-    private static final SimpleChannel CHANNEL = ChannelBuilder.named(Settlements.MODID + ":main").networkProtocolVersion(5).simpleChannel();
+    private static final SimpleChannel CHANNEL = ChannelBuilder.named(Settlements.MODID + ":main").networkProtocolVersion(6).simpleChannel();
     // Detailed edit plans belong to the save, not the once-per-second UI snapshot.
     private static final com.google.gson.Gson SNAPSHOT_JSON=SettlementData.GSON.newBuilder()
         .addSerializationExclusionStrategy(new com.google.gson.ExclusionStrategy() {
             public boolean shouldSkipField(com.google.gson.FieldAttributes field) {
-                return field.getDeclaringClass()==space.magnitoshka.settlements.domain.Building.class&&java.util.Set.of("preparation","columns","access").contains(field.getName());
+                return field.getDeclaringClass()==space.magnitoshka.settlements.domain.Building.class&&java.util.Set.of("preparation","columns","access","reserved").contains(field.getName());
             }
             public boolean shouldSkipClass(Class<?> type) {return false;}
         }).create();
     private static final Map<UUID, UUID> VIEWERS = new HashMap<>();
+    private static final Map<UUID, UUID> CONVERSATIONS = new HashMap<>();
     private static final Map<UUID,TerrainMap.Survey> LAST_TERRAIN=new HashMap<>();
     public static Consumer<TerrainMap.Survey> terrainReceiver=survey->{};
     public static Consumer<Snapshot> clientReceiver = snapshot -> {};
@@ -67,10 +68,22 @@ public final class SettlementNetwork {
         CHANNEL.send(new Action(action,settlement,resident,text,amount),PacketDistributor.SERVER.noArg());
     }
     public static void open(ServerPlayer player, UUID settlement, UUID resident) {
+        CONVERSATIONS.remove(player.getUUID());
+        if(resident!=null)CONVERSATIONS.put(player.getUUID(),resident);
         VIEWERS.put(player.getUUID(),settlement);
         send(player,settlement,resident == null ? "" : resident.toString(),true);
     }
-    public static void close(UUID player) { VIEWERS.remove(player); LAST_TERRAIN.remove(player); }
+    public static void close(UUID player) { VIEWERS.remove(player); CONVERSATIONS.remove(player); LAST_TERRAIN.remove(player); }
+    public static boolean talking(CitizenEntity citizen) {
+        var server=citizen.level().getServer();
+        CONVERSATIONS.entrySet().removeIf(entry->{
+            var player=server.getPlayerList().getPlayer(entry.getKey());
+            if(player==null)return true;
+            if(!entry.getValue().equals(citizen.getUUID()))return false;
+            return player.level()!=citizen.level()||player.distanceToSqr(citizen)>64||!player.isAlive();
+        });
+        return CONVERSATIONS.containsValue(citizen.getUUID());
+    }
     public static void refreshWarehouse(ServerPlayer player,UUID id) {send(player,id,"",false);}
     public static void refresh(ServerPlayer player) {
         if (VIEWERS.containsKey(player.getUUID())) send(player,VIEWERS.get(player.getUUID()),"",false);

@@ -160,5 +160,12 @@
   "action.smartsettlements.foundation_materials": "%s: закончился булыжник для засыпки. Строитель продолжит автоматически, когда он появится на складе.",
   "action.smartsettlements.construction_blocked_at": "%s: работа остановлена. Блок %s в точке %s, %s, %s изменён, защищён или мешает работе.",
   "ui.smartsettlements.status.materials": "Ожидает булыжник для основания",
-  "ui.smartsettlements.foundationRemaining": "Засыпка: ещё до %s булыжника"
+  "ui.smartsettlements.foundationRemaining": "Засыпка: ещё до %s булыжника",
+  "ui.smartsettlements.carriedInventory": "Инвентарь · 4 × 64",
+  "ui.smartsettlements.assignedSite": "Стройка: %s",
+  "ui.smartsettlements.assignedBuilder": "Строитель: %s",
+  "ui.smartsettlements.status.fetching": "Идёт за материалами",
+  "ui.smartsettlements.status.loading": "Забирает материалы",
+  "action.smartsettlements.builder_loaded": "%s взял со склада %s предметов.",
+  "action.smartsettlements.builder_materials": "%s: на складе нет нужных материалов. Строитель ожидает поставки."
 }

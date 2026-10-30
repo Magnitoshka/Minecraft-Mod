@@ -94,7 +94,7 @@ public final class WorldState {
 
     public boolean assign(UUID actor, UUID settlementId, UUID residentId, String profession) {
         var s = accessible(actor, settlementId);
-        if (s == null || !Set.of("builder","unemployed","lumberjack","miner","farmer").contains(profession)) return false;
+        if (s == null || !Set.of("builder","unemployed","lumberjack","miner","farmer","courier").contains(profession)) return false;
         for (var r : s.residents) {
             if (r.id.equals(residentId)) {
                 String required=switch(profession) {case "lumberjack"->"lumber_hut";case "miner"->"mine";case "farmer"->"field";default->"";};
@@ -107,6 +107,7 @@ public final class WorldState {
                 }
                 r.workplace=workplace;
                 if (!r.profession.equals(profession)) {
+                    BuilderAssignments.release(s,r);
                     r.workTicks=0;r.carriedWheat=0;r.workStatus="idle";
                     r.profession = profession;
                     r.level = 1;
@@ -144,6 +145,7 @@ public final class WorldState {
             } else resident.hungerDays++;
             s.foodCredit = (int) Math.min(Integer.MAX_VALUE, credit);
             if (resident.hungerDays >= 3) {
+                BuilderAssignments.release(s,resident);
                 iterator.remove();
                 continue;
             }
