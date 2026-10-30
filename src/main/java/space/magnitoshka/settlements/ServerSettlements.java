@@ -187,6 +187,7 @@ public final class ServerSettlements {
             if (ticks%100==0 && level.hasChunkAt(new BlockPos(s.x-4,s.y,s.z-3)) && level.hasChunkAt(new BlockPos(s.x+4,s.y,s.z+3))) {
                 for (var r:s.residents) if (!r.spawned) { spawn(level,s,r); data.setDirty(); }
             }
+            AutomaticProfessions.tick(level,data,s);
         }
         for(var p:server.getPlayerList().getPlayers()) {
             if(p.containerMenu instanceof WarehouseMenu menu)SettlementNetwork.refreshWarehouse(p,menu.settlementId);

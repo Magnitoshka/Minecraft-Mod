@@ -1,0 +1,17 @@
+# Resident cargo and equipment at death —0.8.0
+
+**Goal:** Complete remaining queue3: real carried resources/equipment drop at the resident's death location, with no virtual warehouse/hall return and no cargo/display duplication.
+**Constraints:** Source inspection, static review and compilation/package inspection only. User explicitly forbids game/client/server/GameTest/simulation/test stands until requested.
+
+Root causes: CitizenEntity.die calls BuilderAssignments.retire before vanilla/Forge accepts death, returning builder stock or queuing production cargo at the hall. Courier hand contains a rendered copy of cargo, and work tools are generated displays, so treating every hand stack as owned loot would duplicate cargo/mint tools. Exact Forge26.3 death sources show LivingDeath cancellation precedes dead=true, dropEquipment runs in captured death drops independently of random mob loot, and Mob.dropCustomDeathLoot applies random/durability equipment changes.
+
+- [x] Separate assignment detachment from unloading. On death clear carried cargo into physical drops; record lost base/prepaid-fill contract balances so replacement builders withdraw missing materials from real stock rather than synthesizing paid credit. Keep staged site material/repair credit and warehouse reservations intact.
+- [x] Mark generated main-hand display stacks, preserve real equipped items, migrate known legacy tool/courier displays and save marker state. Never drop a copied courier stack or a free generated tool; preserve actual item components/durability in real equipment drops.
+- [x] Integrate with accepted vanilla/Forge death: avoid pre-cancellation state changes, random equipment loss and double handling; clear emitted equipment/cargo, detach assignment and remove resident only after accepted death. Keep non-death departure/admin/profession behavior unchanged. Respect captured Forge drop hooks and vanishing equipment semantics.
+- [ ] Add lost-material UI/localization and README/queue/context updates. Read-only review resource conservation/cancellation/cargo/display/reload cases, clean Java25 assemble, inspect JAR/metadata/lang/checksums, commit/push0.8.0 and give direct download.
+
+Replacement accounting: cargo-origin base/prepaid_fill was removed from the contract ledger when loaded; losing it creates only an outstanding replacement balance, not a new reservation. Fetching replacement stock moves actual warehouse items into the corresponding ledger once, then normal carried/staged consumption continues. Ordinary fill, repair, harvest and courier cargo already use warehouse withdrawal and naturally need resupply after loss. Items staged at the site are not carried by the dead resident and do not drop.
+
+## Scope update and review
+
+User added automatic professions during this work; deliver both in0.8.0. Road restriction, obstructing saplings and farmer assignment issue were explicitly queued only and remain separate. Static review fixed forced loot after killer suppression and migration of old display stacks across profession changes. Normal captured dropEquipment is the sole emitter; suppressed kills record genuinely lost contract cargo without emitting new drops. Legacy plain generated stacks are recognized across all old tool types/logs/saplings; old format cannot distinguish manually supplied identical plain stacks. New-format real equipment is explicitly separated by setter/marker state.

@@ -42,6 +42,7 @@ public final class BuilderLogistics {
     public static void spendFill(Resident r,Building job) {r.builderInventory.take(fillOrigin(job),key->key.equals("minecraft:cobblestone"),1);}
     public static int load(Settlement s,Resident r,Building job,boolean foundation) {
         BuilderAssignments.unload(s,r);r.cargoJob=job.id;
+        replenishLost(s,job,foundation);
         if(foundation) {
             int amount=job.foundationPrepaid?job.prepaidFill:s.resources.getOrDefault("minecraft:cobblestone",0);
             int moved=r.builderInventory.add("minecraft:cobblestone",fillOrigin(job),Math.min(amount,Math.max(1,job.foundationRemaining>0?job.foundationRemaining:job.prepaidFill)));
@@ -57,6 +58,22 @@ public final class BuilderLogistics {
             }
         }
         return r.builderInventory.size();
+    }
+    private static void replenishLost(Settlement s,Building job,boolean foundation) {
+        if(foundation) {
+            if(job.foundationPrepaid&&job.lostPrepaidFill>0) {
+                int moved=s.withdraw("minecraft:cobblestone",job.lostPrepaidFill);
+                job.prepaidFill+=moved;job.lostPrepaidFill-=moved;
+            }
+            return;
+        }
+        if(job.lostStone>0) {
+            int moved=s.withdraw("minecraft:cobblestone",job.lostStone);
+            job.reserved.merge("minecraft:cobblestone",moved,Integer::sum);job.lostStone-=moved;
+        }
+        for(var key:s.resources.keySet().stream().sorted().toList())if(job.lostWood>0&&Construction.isWood(key)) {
+            int moved=s.withdraw(key,job.lostWood);job.reserved.merge(key,moved,Integer::sum);job.lostWood-=moved;
+        }
     }
     public static boolean hasFoundationWork(Building job) {
         return job.foundationRemaining>0||(job.foundationPrepaid&&job.preparation.stream().skip(job.prepared).anyMatch(e->e.fill));

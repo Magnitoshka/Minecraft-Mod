@@ -9,6 +9,10 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -29,6 +33,30 @@ public final class CitizenEntity extends PathfinderMob {
     private final CitizenNavigation routes=new CitizenNavigation(this);
     public CitizenNavigation routes() {return routes;}
     private boolean talking;
+    private ItemStack displayHand=ItemStack.EMPTY;
+    private boolean legacyHand,deathLootHandled;
+    @Override public void setItemSlot(EquipmentSlot slot,ItemStack stack) {
+        if(slot==EquipmentSlot.MAINHAND) {displayHand=ItemStack.EMPTY;legacyHand=false;}
+        super.setItemSlot(slot,stack);
+    }
+    public boolean isDisplayHand() {
+        var hand=getMainHandItem();
+        return !displayHand.isEmpty()&&hand.getCount()==displayHand.getCount()&&ItemStack.isSameItemSameComponents(hand,displayHand);
+    }
+    public void showWorkHand(ItemStack stack) {
+        // Work/cargo displays must not replace genuine equipment supplied by another system.
+        if(!getMainHandItem().isEmpty()&&!isDisplayHand())return;
+        setItemSlot(EquipmentSlot.MAINHAND,stack);displayHand=stack.copy();
+    }
+    public void recognizeLegacyHand(Resident resident) {
+        if(!legacyHand)return;
+        legacyHand=false;var hand=getMainHandItem();
+        if(hand.isEmpty()||!hand.getComponentsPatch().isEmpty())return;
+        // Old saves did not mark displays, and profession may have changed before the next work tick.
+        var tools=java.util.List.of(Items.STONE_AXE,Items.IRON_AXE,Items.DIAMOND_AXE,
+            Items.STONE_PICKAXE,Items.IRON_PICKAXE,Items.DIAMOND_PICKAXE,Items.STONE_HOE,Items.IRON_HOE,Items.DIAMOND_HOE);
+        if(hand.getCount()==1&&tools.stream().anyMatch(hand::is)||hand.is(ItemTags.LOGS)||hand.is(ItemTags.SAPLINGS))displayHand=hand.copy();
+    }
     public boolean isTalking() {return talking;}
     @Override public void push(net.minecraft.world.entity.Entity entity) {
         if(!(entity instanceof CitizenEntity))super.push(entity);
@@ -66,6 +94,7 @@ public final class CitizenEntity extends PathfinderMob {
         if (s==null) { discard(); return; }
         var r=s.residents.stream().filter(v->v.id.equals(getUUID())).findFirst().orElse(null);
         if (r==null) { discard(); return; }
+        recognizeLegacyHand(r);
         var follow=getAttribute(Attributes.FOLLOW_RANGE);
         if(follow!=null&&follow.getBaseValue()<48)follow.setBaseValue(48);
         if(talking||yielding) {r.workStatus=talking?"talking":"yielding";updateActivity(s,r);return;}
@@ -120,21 +149,48 @@ public final class CitizenEntity extends PathfinderMob {
         }
         return InteractionResult.SUCCESS;
     }
+    @Override protected void dropCustomDeathLoot(ServerLevel level,DamageSource source,boolean playerKilled) {
+        // Mob's implementation randomly drops/damages equipment; owned citizen equipment is handled below.
+    }
+    @Override protected void dropEquipment(ServerLevel level) {
+        if(deathLootHandled)return;
+        deathLootHandled=true;
+        var data=SettlementData.get(level.getServer());
+        var settlement=settlementId==null?null:data.state.settlements.get(settlementId);
+        var resident=settlement==null?null:settlement.residents.stream().filter(r->r.id.equals(getUUID())).findFirst().orElse(null);
+        CitizenDrops.drop(this,level,settlement,resident);data.setDirty();
+    }
     @Override public void die(DamageSource cause) {
-        if (level() instanceof ServerLevel server && settlementId!=null) {
-            var data=SettlementData.get(server.getServer());
-            var s=data.state.settlements.get(settlementId);
-            if (s!=null) { s.residents.stream().filter(r->r.id.equals(getUUID())).findFirst().ifPresent(r->space.magnitoshka.settlements.domain.BuilderAssignments.retire(s,r));s.residents.removeIf(r->r.id.equals(getUUID())); data.setDirty(); }
-        }
         super.die(cause);
+        // Forge can cancel LivingDeath. No state/cargo changes occur until vanilla accepted the death.
+        if(!dead||!(level() instanceof ServerLevel server))return;
+        var data=SettlementData.get(server.getServer());
+        var settlement=settlementId==null?null:data.state.settlements.get(settlementId);
+        if(!deathLootHandled) {
+            // A killer may suppress/defer vanilla death loot; do not force a second drop pipeline.
+            deathLootHandled=true;
+            var resident=settlement==null?null:settlement.residents.stream().filter(r->r.id.equals(getUUID())).findFirst().orElse(null);
+            CitizenDrops.suppressed(this,server,settlement,resident);data.setDirty();
+        }
+        if(settlement!=null) {
+            settlement.residents.stream().filter(r->r.id.equals(getUUID())).findFirst()
+                .ifPresent(r->space.magnitoshka.settlements.domain.BuilderAssignments.detach(settlement,r));
+            if(settlement.residents.removeIf(r->r.id.equals(getUUID())))data.setDirty();
+        }
+        routes.cancel();
     }
     @Override protected void addAdditionalSaveData(ValueOutput out) {
         super.addAdditionalSaveData(out);
         if (settlementId!=null) out.putString("Settlement",settlementId.toString());
+        out.putBoolean("DisplayHandKnown",!legacyHand);out.store("DisplayHand",ItemStack.OPTIONAL_CODEC,displayHand);
+        out.putBoolean("DeathLootHandled",deathLootHandled);
     }
     @Override protected void readAdditionalSaveData(ValueInput in) {
         super.readAdditionalSaveData(in);
         String id=in.getStringOr("Settlement","");
         if (!id.isEmpty()) settlementId=UUID.fromString(id);
+        legacyHand=!in.getBooleanOr("DisplayHandKnown",false);
+        displayHand=in.read("DisplayHand",ItemStack.OPTIONAL_CODEC).orElse(ItemStack.EMPTY);
+        deathLootHandled=in.getBooleanOr("DeathLootHandled",false);
     }
 }

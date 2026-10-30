@@ -35,7 +35,7 @@ public final class CitizenWork {
                 case "miner"->toolTier>=3?Items.DIAMOND_PICKAXE:toolTier==2?Items.IRON_PICKAXE:Items.STONE_PICKAXE;
                 case "farmer"->toolTier>=3?Items.DIAMOND_HOE:toolTier==2?Items.IRON_HOE:Items.STONE_HOE;
                 default->Items.AIR;};
-            citizen.setItemSlot(EquipmentSlot.MAINHAND,tool==Items.AIR?ItemStack.EMPTY:new ItemStack(tool));
+            citizen.showWorkHand(tool==Items.AIR?ItemStack.EMPTY:new ItemStack(tool));
         }
         boolean previousCargo=java.util.Arrays.stream(r.builderInventory.slots).anyMatch(slot->slot.count>0&&
             (slot.origin.equals("harvest")&&!r.profession.equals("lumberjack")||slot.origin.equals("courier")&&!r.profession.equals("courier")));
@@ -375,7 +375,7 @@ public final class CitizenWork {
     }
     private void courier(CitizenEntity citizen,ServerLevel level,SettlementData data,Settlement s,Resident r) {
         var carried=java.util.Arrays.stream(r.builderInventory.slots).filter(slot->slot.count>0).findFirst().orElse(null);
-        citizen.setItemSlot(EquipmentSlot.MAINHAND,carried==null?ItemStack.EMPTY:
+        citizen.showWorkHand(carried==null?ItemStack.EMPTY:
             new ItemStack(BuiltInRegistries.ITEM.getValue(Identifier.parse(carried.item)),carried.count));
         var warehouse=s.buildings.stream().filter(b->b.complete&&b.type.equals("warehouse")&&b.id.equals(r.workplace)).findFirst().orElse(null);
         if(warehouse==null) {r.workStatus="no_workplace";return;}

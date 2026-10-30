@@ -32,7 +32,7 @@ public final class SettlementScreen extends Screen {
     private boolean feedbackSuccess,feedbackPending;
     private long feedbackUntil;
     private int tab, overviewPage, residentIndex, resourcePage, professionIndex, catalogPage, rosterPage;
-    private String citizen="", selectedBuilding="", buildChoice="", professionResident="";
+    private String citizen="", selectedBuilding="", buildChoice="", professionResident="", professionCurrent="";
     private boolean buildingDetails;
     private EditBox rename, amount;
     private String renameDraft, amountDraft="10";
@@ -76,8 +76,8 @@ public final class SettlementScreen extends Screen {
         var incoming=next.settlement();
         boolean switched=!Objects.equals(previous==null?null:previous.id,incoming==null?null:incoming.id);
         boolean resourcesChanged=previous!=null && incoming!=null && !previous.resources.equals(incoming.resources);
-        boolean peopleChanged=previous!=null && incoming!=null && !previous.residents.stream().map(r->r.id).toList()
-            .equals(incoming.residents.stream().map(r->r.id).toList());
+        boolean peopleChanged=previous!=null && incoming!=null && !previous.residents.stream().map(r->r.id+":"+r.profession).toList()
+            .equals(incoming.residents.stream().map(r->r.id+":"+r.profession).toList());
         snapshot=next;
         if(switched) {
             rename=null; amount=null; renameDraft=null; amountDraft="10";terrain=null;terrainTexture.close();feedback=null;
@@ -203,8 +203,8 @@ public final class SettlementScreen extends Screen {
         button(x+w-18,91,18,Component.literal(">"),()->selectResident(1));
         if(r==null)return;
         citizen=r.id.toString();
-        if(!citizen.equals(professionResident)) {
-            professionResident=citizen;professionIndex=0;
+        if(!citizen.equals(professionResident)||!r.profession.equals(professionCurrent)) {
+            professionResident=citizen;professionCurrent=r.profession;professionIndex=0;
             for(int i=0;i<PROFESSIONS.length;i++)if(PROFESSIONS[i].equals(r.profession))professionIndex=i;
         }
         button(x,174,18,Component.literal("<"),()->{professionIndex=Math.floorMod(professionIndex-1,PROFESSIONS.length);rebuildWidgets();});
@@ -477,7 +477,7 @@ public final class SettlementScreen extends Screen {
         var r=resident();
         if(r==null) {text(g,tr("noCitizens"),x,116,w,LIGHT);return;}
         centered(g,Component.literal(r.name),x+21,96,w-42,GOLD);
-        text(g,profession(r.profession),x,116,w,professionColor(r.profession));
+        text(g,profession(r.profession).copy().append(r.autoAssigned?tr("automaticProfession"):Component.empty()),x,116,w,professionColor(r.profession));
         text(g,tr("citizenLevel",r.level,r.experience),x,130,w,LIGHT);
         text(g,tr("citizenMood",r.mood,r.hungerDays),x,144,w,LIGHT);
         String work=r.workStatus==null||r.workStatus.isEmpty()?"idle":r.workStatus;
@@ -509,6 +509,11 @@ public final class SettlementScreen extends Screen {
             int progress=b.totalSteps()<=0?0:(int)((long)Math.clamp(b.completedSteps(),0,b.totalSteps())*(w-2)/b.totalSteps());
             g.fill(x,161,x+w,167,0xFF211B14);g.fill(x+1,162,x+1+progress,166,0xFFC8A05D);
             if(!b.complete&&b.foundationRemaining>0)text(g,tr("foundationRemaining",b.foundationRemaining),x,177,w,0xFFC4AA7D);
+            if(!b.complete&&(b.lostWood>0||b.lostStone>0||b.lostPrepaidFill>0)) {
+                var loss=tr("lostBuildingMaterials",b.lostWood,(long)b.lostStone+b.lostPrepaidFill);
+                text(g,loss,x,188,w,0xFFFFAA87);
+                if(mouseX>=x&&mouseX<x+w&&mouseY>=186&&mouseY<198)g.setTooltipForNextFrame(loss,mouseX,mouseY);
+            }
             var builder=snapshot.settlement().residents.stream().filter(r->r.id.toString().equals(b.assignedBuilder)).findFirst().orElse(null);
             if(builder!=null)text(g,tr("assignedBuilder",builder.name),x,220,w,GOLD);
             if(b.complete&&height>267)text(g,tr("workplaceCount",b.workplaces()),x,235,w,LIGHT);

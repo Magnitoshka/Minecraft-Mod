@@ -7,6 +7,7 @@ public final class Resident {
     public UUID id = UUID.randomUUID();
     public String name = "Alden";
     public String profession = "unemployed";
+    public boolean autoAssigned;
     public int level = 1;
     public int experience;
     public int mood = 100;

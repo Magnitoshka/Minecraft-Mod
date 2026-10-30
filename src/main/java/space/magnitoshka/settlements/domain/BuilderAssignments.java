@@ -23,9 +23,12 @@ public final class BuilderAssignments {
         r.cargoJob="";r.supplyReady=false;
     }
     public static void release(Settlement s,Resident r) {
-        unload(s,r);
+        unload(s,r);detach(s,r);
+    }
+    /** Remove ownership only. Death must not also return physically dropped cargo to stock. */
+    public static void detach(Settlement s,Resident r) {
         for(var b:s.buildings)if(b.assignedBuilder.equals(r.id.toString())) {b.assignedBuilder="";if(!b.complete)b.status="waiting_builder";else if(b.repairing)b.status="needs_repair";}
-        r.taskBuilding="";r.fetching=false;
+        r.taskBuilding="";r.cargoJob="";r.fetching=false;r.supplyReady=false;
     }
     public static void retire(Settlement s,Resident r) {
         release(s,r);

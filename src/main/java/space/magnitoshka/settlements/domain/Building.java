@@ -13,6 +13,7 @@ public final class Building {
     /** Price agreed when queued; live configuration changes never alter an active contract. */
     public int priceWood=-1,priceStone=-1;
     public int stagedWood,stagedStone;
+    public int lostWood,lostStone,lostPrepaidFill;
     public boolean repairing;
     public List<Integer> repairUnits=new ArrayList<>();
     public int repairTotal;

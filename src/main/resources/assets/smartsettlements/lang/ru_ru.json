@@ -231,5 +231,8 @@
   "ui.smartsettlements.status.repair_blocked": "Ремонт: нет доступа, опоры или разрешения",
   "ui.smartsettlements.repairProgress": "Ремонт: %s / %s элементов",
   "action.smartsettlements.repair_complete": "Здание проверено, повреждённых элементов больше нет: %s.",
-  "ui.smartsettlements.status.waiting_path": "Ожидает пересчёта маршрута"
+  "ui.smartsettlements.status.waiting_path": "Ожидает пересчёта маршрута",
+  "ui.smartsettlements.lostBuildingMaterials": "Нужна замена: %s брёвен / %s булыжника",
+  "ui.smartsettlements.automaticProfession": " · авто",
+  "action.smartsettlements.auto_profession": "%s самостоятельно выбрал профессию: %s."
 }

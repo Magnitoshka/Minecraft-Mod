@@ -113,6 +113,7 @@ public final class WorldState {
                     r.level = 1;
                     r.experience = 0;
                 }
+                r.autoAssigned=false;
                 return true;
             }
         }

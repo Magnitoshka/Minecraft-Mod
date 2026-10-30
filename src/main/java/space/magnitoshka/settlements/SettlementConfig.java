@@ -68,6 +68,12 @@ public final class SettlementConfig {
     public static final ForgeConfigSpec.IntValue REPAIR_WOOD=integer("repairLogsPerUnit",1,1,64);
     public static final ForgeConfigSpec.IntValue REPAIR_STONE=integer("repairCobblestonePerUnit",1,1,64);
     public static final ForgeConfigSpec.IntValue REPATH_TICKS=integer("citizenRepathAfterTicks",60,20,1200);
+    public static final ForgeConfigSpec.BooleanValue AUTO_PROFESSIONS=B.define("autoAssignProfessions",true);
+    public static final ForgeConfigSpec.IntValue AUTO_ASSIGN_SECONDS=integer("autoAssignIntervalSeconds",5,1,60);
+    public static final ForgeConfigSpec.IntValue AUTO_BUILDERS=integer("maxAutomaticBuilders",2,1,16);
+    public static final ForgeConfigSpec.IntValue AUTO_RESIDENTS_PER_FARMER=integer("automaticResidentsPerFarmer",8,1,1024);
+    public static final ForgeConfigSpec.IntValue AUTO_WOOD=integer("automaticWoodReserve",128,0,1000000);
+    public static final ForgeConfigSpec.IntValue AUTO_STONE=integer("automaticCobblestoneReserve",128,0,1000000);
     public static final ForgeConfigSpec SPEC = B.build();
     private static ForgeConfigSpec.IntValue integer(String key, int value, int min, int max) {
         return B.defineInRange(key, value, min, max);

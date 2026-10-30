@@ -231,5 +231,8 @@
   "ui.smartsettlements.status.repair_blocked": "Repair blocked: access, support or protection",
   "ui.smartsettlements.repairProgress": "Repairs: %s / %s units",
   "action.smartsettlements.repair_complete": "Building checked; no damaged units remain: %s.",
-  "ui.smartsettlements.status.waiting_path": "Waiting to recalculate route"
+  "ui.smartsettlements.status.waiting_path": "Waiting to recalculate route",
+  "ui.smartsettlements.lostBuildingMaterials": "Replacement needed: %s logs / %s cobblestone",
+  "ui.smartsettlements.automaticProfession": " · auto",
+  "action.smartsettlements.auto_profession": "%s automatically took the profession: %s."
 }

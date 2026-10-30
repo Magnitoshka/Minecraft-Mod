@@ -76,7 +76,8 @@ public final class Progression {
         job.reserved.clear();
         job.upgradeFromLevel=job.level;job.upgradeFromVersion=job.templateVersion;
         job.templateVersion=1;job.targetLevel=next;job.total=target.size();job.progress=0;job.materialProgress=0;
-        job.priceWood=wood;job.priceStone=stone;job.stagedWood=job.stagedStone=0;job.logisticsInitialized=true;
+        job.priceWood=wood;job.priceStone=stone;job.stagedWood=job.stagedStone=0;
+        job.lostWood=job.lostStone=job.lostPrepaidFill=0;job.logisticsInitialized=true;
         job.workRetryAt=0;job.complete=false;job.started=false;job.status="waiting_builder";job.assignedBuilder="";
         job.preparation.clear();job.columns.clear();job.columnCursor=0;job.prepared=0;job.preparationTotal=0;
         job.foundationRemaining=0;job.prepaidFill=0;job.foundationPrepaid=false;

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.0+26.3 — 2026-10-30
+
+Drop residents' real cargo and equipment at accepted death location through Forge captured drops; separate death from hall retirement, suppress generated work/courier display duplicates, preserve real equipment data and death cancellation. Record lost reserved material balances and refill only from actual warehouse stock. Add staggered demand-based profession assignment for empty-handed unemployed residents, preserve manual professions, respect vacancies, and retire temporary auto-builders after cargo return. Configurable scheduling/reserve targets and automatic markers. Road restrictions, sapling obstructions and reported farmer assignment failure remain separately queued. No game/simulation/tests.
+
 ## 0.7.2+26.3 — 2026-10-30
 
 Unify citizen movement, discard completed paths before replanning, reconcile exact work arrival with path reach tolerance, and align short supported clear segments using normal movement. Add a configurable progress watchdog (60 ticks by default), UUID-spread retries and shared navigation budgeting. Mandatory goals supersede old pending paths; optional detours preserve the original intent on failure. Account for full snow collision height and cancel recovery during conversation/sleep/abandoned work. Static review/build only, no gameplay simulation. Death-location loot remains queued.
