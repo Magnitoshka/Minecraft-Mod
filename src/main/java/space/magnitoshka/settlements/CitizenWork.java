@@ -389,7 +389,7 @@ public final class CitizenWork {
                         &&hasCargoRoom(r,BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
                 }).stream().min(Comparator.comparingDouble(citizen::distanceToSqr)).orElse(null);
             if(drop!=null) {
-                approach(citizen,drop.blockPosition(),r,2);
+                approachSapling(citizen,drop.blockPosition(),r);
                 if(!r.workStatus.equals("blocked"))return;
                 unreachableSaplings.put(drop.getUUID(),citizen.tickCount+200);
                 unreachableSaplings.entrySet().removeIf(entry->entry.getValue()<citizen.tickCount);
@@ -436,6 +436,13 @@ public final class CitizenWork {
     private boolean hasCargoRoom(Resident r,String key) {
         for(var slot:r.builderInventory.slots)if(slot.count==0||(slot.origin.equals("harvest")&&slot.item.equals(key)&&slot.count<64))return true;
         return false;
+    }
+    private void approachSapling(CitizenEntity citizen,BlockPos target,Resident r) {
+        if(citizen.distanceToSqr(target.getX()+.5,target.getY(),target.getZ()+.5)<=4)return;
+        if(!citizen.getNavigation().isDone()||!NavigationBudget.take(citizen.level().getServer())) {r.workStatus="walking";return;}
+        var path=citizen.getNavigation().createPath(target,1);
+        if(path==null||!path.canReach()) {r.workStatus="blocked";return;}
+        citizen.getNavigation().moveTo(path,.85);r.workStatus="walking";
     }
     private boolean hasLeaves(ServerLevel level,BlockPos base) {
         for(int dy=2;dy<=24;dy+=2)for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++) {

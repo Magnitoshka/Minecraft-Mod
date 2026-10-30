@@ -20,3 +20,8 @@ Execute in order. Preserve no-runtime/no-stand constraint; inspect code, compile
 - Gradle is blocked by the managed sandbox: its file lock listener cannot create a socket (`Operation not permitted`). No sandbox escalation or runtime launch performed.
 - Full Java25 compilation with Forge event annotation validators and packaging run via `tools/package-cached.py`; see `docs/ub-mode-log.md` for result and delivery status. This is not a successful Gradle clean assemble.
 - Delivery: local implementation/artifact commit `c2a8504`. GitHub push attempted and failed because `github.com` cannot be resolved. Item10 remains incomplete for the unavailable Gradle check and remote delivery; compiled/package-verified JAR0.6.0 is available locally.
+
+## Final unrestricted verification
+
+- The parallel session's socket/DNS limitations were local to that session. Final verification here completed a normal Java25 Gradle clean assemble; GitHub branch access was also verified. The fallback artifact is superseded by the Gradle-built JAR.
+- Additional static fixes: mutual citizen push suppression, immobility and explicit dialogue release on all card/tab/map transitions; current path-node traffic heading; higher/retained forestry navigation range and failed sapling target cooldown; barrel-local gift progress; detours to lengthen access routes for local elevation changes.

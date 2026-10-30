@@ -2,7 +2,7 @@
 
 ## 0.6.0+26.3 — 2026-10-30
 
-Exclusive persistent builder assignments and four-slot material trips, owner conversations that stop residents, traffic yielding, local-height sites with sloped access preserving existing roads, a paginated resident roster, physical lumber-hut barrels with a one-time gift of10 oak saplings, real wood/sapling collection and warehouse couriers. Production cargo stays carried on profession changes; departures leave physical items rather than bypassing storage capacity. Static review and full Java25 compilation with Forge event validators passed; cached packaging and SHA256 verification replace Gradle in this socket-restricted session. No game/server/test runtime.
+Exclusive persistent builder assignments and four-slot material trips, owner conversations that stop residents, traffic yielding, local-height sites with sloped access preserving existing roads, a paginated resident roster, physical lumber-hut barrels with a one-time gift of10 oak saplings, real wood/sapling collection and warehouse couriers. Production cargo stays carried on profession changes; departures leave physical items rather than bypassing storage capacity. Static review, Java25 clean assemble and SHA256 verification passed. Final delivery uses the Gradle-built JAR; earlier cached fallback packaging was superseded. No game/server/test runtime.
 
 ## 0.3.0+26.3 — 2026-10-30
 
