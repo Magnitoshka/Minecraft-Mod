@@ -20,7 +20,7 @@ public final class SitePreparation {
         static Result fail(String problem,BlockPos at) {return new Result(null,problem,at);}
     }
     public static Result plan(ServerLevel level,ServerPlayer player,Settlement settlement,BuildingType type,int x,int z) {
-        int y=settlement.y;
+        int y=localHeight(level,x,z);
         if(y-2<level.getMinY()||y+5>=level.getMaxY())return Result.fail("height",new BlockPos(x,y,z));
         var entrance=new BlockPos(x,y,z-type.halfDepth-1);
         var access=access(level,settlement,type,x,z,entrance);
@@ -28,7 +28,7 @@ public final class SitePreparation {
         var columns=new ArrayList<SiteColumn>();
         // Access first, from the hall outward. Each work position is on the preceding finished column.
         for(int i=0;i<access.size();i++) {
-            var point=access.get(i);var column=new SiteColumn(point.x(),y,point.z(),Math.max(0,i-1));
+            var point=access.get(i);var column=new SiteColumn(point.x(),point.y(),point.z(),Math.max(0,i-1));
             var error=column(level,player,column,false);
             if(error!=null)return error;
             columns.add(column);
@@ -42,9 +42,19 @@ public final class SitePreparation {
         int steps=0,fill=0;
         for(var column:columns) {
             for(var run:column.clear)steps+=run.top()-run.bottom()+1;
-            int count=Math.max(0,y-column.fillY);steps+=count;fill+=count;
+            int count=Math.max(0,column.y-column.fillY);steps+=count;fill+=count;
         }
         return new Result(new Plan(y,steps,fill,columns,access),"",entrance);
+    }
+    private static int localHeight(ServerLevel level,int x,int z) {
+        int y=level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,x,z);
+        // A canopy/trunk is not the chosen ground surface.
+        while(y>level.getMinY()+1) {
+            var state=level.getBlockState(new BlockPos(x,y-1,z));
+            if(!state.is(BlockTags.LOGS)&&!state.is(BlockTags.LEAVES)&&!cover(state))break;
+            y--;
+        }
+        return y;
     }
     private static Result column(ServerLevel level,ServerPlayer player,SiteColumn column,boolean field) {
         var floor=new BlockPos(column.x,column.y-1,column.z);
@@ -172,10 +182,32 @@ public final class SitePreparation {
         var previous=new HashMap<BlockPos,BlockPos>();previous.put(start,start);queue.add(start);
         while(!queue.isEmpty()) {
             var p=queue.remove();
-            if(p.equals(entrance)) {
+            if(p.getX()==entrance.getX()&&p.getZ()==entrance.getZ()) {
                 var result=new ArrayList<SitePoint>();
                 while(!p.equals(start)) {result.add(new SitePoint(p.getX(),s.y,p.getZ()));p=previous.get(p);}
-                result.add(new SitePoint(start.getX(),s.y,start.getZ()));Collections.reverse(result);return result;
+                result.add(new SitePoint(start.getX(),s.y,start.getZ()));Collections.reverse(result);
+                if(!lengthenForGrades(result,level,s,type,x,z,entrance.getY()))return List.of();
+                // Existing paths are fixed anchors. Interpolate a walkable slope between anchors.
+                var anchors=new TreeMap<Integer,Integer>();anchors.put(0,s.y);anchors.put(result.size()-1,entrance.getY());
+                for(int i=0;i<result.size();i++) {
+                    var cell=result.get(i);
+                    for(var building:s.buildings)for(var point:building.access)
+                        if(point.x()==cell.x()&&point.z()==cell.z()) {
+                            var previousHeight=anchors.putIfAbsent(i,point.y());
+                            if(previousHeight!=null&&previousHeight!=point.y())return List.of();
+                        }
+                }
+                var entries=new ArrayList<>(anchors.entrySet());
+                for(int a=1;a<entries.size();a++) {
+                    int from=entries.get(a-1).getKey(),to=entries.get(a).getKey();
+                    int low=entries.get(a-1).getValue(),high=entries.get(a).getValue();
+                    if(Math.abs(high-low)>to-from)return List.of();
+                    for(int i=from;i<=to;i++) {
+                        var point=result.get(i);int height=low+(int)Math.round((double)(high-low)*(i-from)/(to-from));
+                        result.set(i,new SitePoint(point.x(),height,point.z()));
+                    }
+                }
+                return result;
             }
             for(var direction:Direction.Plane.HORIZONTAL) {
                 var next=p.relative(direction);
@@ -188,6 +220,42 @@ public final class SitePreparation {
             }
         }
         return List.of();
+    }
+    private static long columnKey(int x,int z) {return ((long)x<<32)|(z&0xffffffffL);}
+    /** Add safe two-cell bends when the first route is too short for a walkable staircase. */
+    private static boolean lengthenForGrades(List<SitePoint> path,ServerLevel level,Settlement s,BuildingType type,int x,int z,int endY) {
+        var existing=new HashMap<Long,Integer>();
+        for(var building:s.buildings)for(var point:building.access)existing.put(columnKey(point.x(),point.z()),point.y());
+        while(true) {
+            int from=0,to=-1,lastY=s.y;
+            for(int i=1;i<path.size();i++) {
+                var point=path.get(i);var anchor=i==path.size()-1?Integer.valueOf(endY):existing.get(columnKey(point.x(),point.z()));
+                if(anchor==null)continue;
+                if(Math.abs(anchor-lastY)>i-from) {to=i;break;}
+                from=i;lastY=anchor;
+            }
+            if(to<0)return true;
+            var used=new HashSet<Long>();for(var point:path)used.add(columnKey(point.x(),point.z()));
+            boolean added=false;
+            for(int i=from;i<to&&!added;i++) {
+                var a=path.get(i);var b=path.get(i+1);int dx=b.x()-a.x(),dz=b.z()-a.z();
+                for(int side:new int[]{1,-1}) {
+                    int ox=-dz*side,oz=dx*side;
+                    int ax=a.x()+ox,az=a.z()+oz,bx=b.x()+ox,bz=b.z()+oz;
+                    if(!bendAllowed(level,s,type,x,z,ax,az,used,existing)||!bendAllowed(level,s,type,x,z,bx,bz,used,existing))continue;
+                    path.add(i+1,new SitePoint(ax,s.y,az));path.add(i+2,new SitePoint(bx,s.y,bz));added=true;break;
+                }
+            }
+            if(!added)return false;
+        }
+    }
+    private static boolean bendAllowed(ServerLevel level,Settlement s,BuildingType type,int x,int z,int px,int pz,Set<Long> used,Map<Long,Integer> existing) {
+        long key=columnKey(px,pz);var pos=new BlockPos(px,s.y,pz);
+        return !used.contains(key)&&!existing.containsKey(key)&&level.hasChunkAt(pos)&&level.getWorldBorder().isWithinBounds(pos)
+            &&Math.hypot((double)px-s.x,(double)pz-s.z)<=Construction.radius(s)
+            &&!(Math.abs(px-s.x)<=4&&Math.abs(pz-s.z)<=3)
+            &&!(Math.abs(px-x)<=type.halfWidth&&Math.abs(pz-z)<=type.halfDepth)
+            &&s.buildings.stream().noneMatch(b->b.contains(px,pz,0));
     }
     private SitePreparation() {}
 }

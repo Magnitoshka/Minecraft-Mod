@@ -130,6 +130,23 @@ public final class ServerSettlements {
             var level=server.getLevel(ResourceKey.create(Registries.DIMENSION,Identifier.parse(s.dimension)));
             if (level==null) continue;
             if(space.magnitoshka.settlements.domain.BuilderAssignments.reconcile(s))data.setDirty();
+            for(var hut:s.buildings)HutStorage.initialize(level,data,s,hut);
+            var cargoDrop=new BlockPos(s.x,s.y,s.z-4);
+            if(level.hasChunkAt(cargoDrop)) {
+                int remainingStacks=4;
+                for(var key:s.departedCargo.keySet().stream().sorted().toList()) {
+                    if(remainingStacks--<=0)break;
+                    var item=BuiltInRegistries.ITEM.getValue(Identifier.parse(key));
+                    int count=Math.min(item.getDefaultMaxStackSize(),s.departedCargo.get(key));
+                    if(count<=0)continue;
+                    var drop=new net.minecraft.world.entity.item.ItemEntity(level,cargoDrop.getX()+.5,cargoDrop.getY(),cargoDrop.getZ()+.5,new ItemStack(item,count));
+                    if(level.addFreshEntity(drop)) {
+                        int rest=s.departedCargo.get(key)-count;
+                        if(rest==0)s.departedCargo.remove(key);else s.departedCargo.put(key,rest);
+                        data.setDirty();
+                    }
+                }
+            }
             if(!s.roofBannerCleaned) {
                 var flag=new BlockPos(s.x,s.y+5,s.z);
                 if(level.hasChunkAt(flag)) {
@@ -177,6 +194,7 @@ public final class ServerSettlements {
     }
     public static void action(ServerPlayer p, SettlementNetwork.Action request) {
         if (request.action().equals("close")) { SettlementNetwork.close(p.getUUID()); return; }
+        if (request.action().equals("endDialogue")) {SettlementNetwork.endDialogue(p.getUUID());return;}
         var data=SettlementData.get(p.level().getServer()); var world=data.state;
         if (request.action().equals("open")) {
             UUID id=null;

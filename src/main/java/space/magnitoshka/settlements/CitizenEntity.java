@@ -28,9 +28,13 @@ public final class CitizenEntity extends PathfinderMob {
     private final CitizenTraffic traffic=new CitizenTraffic();
     private boolean talking;
     public boolean isTalking() {return talking;}
+    @Override public void push(net.minecraft.world.entity.Entity entity) {
+        if(!(entity instanceof CitizenEntity))super.push(entity);
+    }
+    @Override public boolean isPushable() {return !talking&&super.isPushable();}
     public CitizenEntity(EntityType<? extends CitizenEntity> type, Level level) { super(type,level); setPersistenceRequired(); }
     public static AttributeSupplier.Builder attributes() {
-        return createMobAttributes().add(Attributes.MAX_HEALTH,20).add(Attributes.MOVEMENT_SPEED,.25).add(Attributes.FOLLOW_RANGE,24);
+        return createMobAttributes().add(Attributes.MAX_HEALTH,20).add(Attributes.MOVEMENT_SPEED,.25).add(Attributes.FOLLOW_RANGE,48);
     }
     @Override protected void registerGoals() {
         goalSelector.addGoal(0,new FloatGoal(this));
@@ -51,7 +55,7 @@ public final class CitizenEntity extends PathfinderMob {
         super.tick();
         if (!(level() instanceof ServerLevel server) || settlementId==null) return;
         talking=SettlementNetwork.talking(this);
-        if(talking) {getNavigation().stop();if(isSleeping())stopSleeping();}
+        if(talking) {getNavigation().stop();setDeltaMovement(0,getDeltaMovement().y,0);if(isSleeping())stopSleeping();}
         boolean yielding=!talking&&traffic.tick(this,server);
         if(tickCount%20!=0)return;
         var data=SettlementData.get(server.getServer());
@@ -59,6 +63,8 @@ public final class CitizenEntity extends PathfinderMob {
         if (s==null) { discard(); return; }
         var r=s.residents.stream().filter(v->v.id.equals(getUUID())).findFirst().orElse(null);
         if (r==null) { discard(); return; }
+        var follow=getAttribute(Attributes.FOLLOW_RANGE);
+        if(follow!=null&&follow.getBaseValue()<48)follow.setBaseValue(48);
         if(talking||yielding) {r.workStatus=talking?"talking":"yielding";updateActivity(s,r);return;}
         BlockPos bed=null;
         if(r.bed!=null&&!r.bed.isEmpty()) {
@@ -115,7 +121,7 @@ public final class CitizenEntity extends PathfinderMob {
         if (level() instanceof ServerLevel server && settlementId!=null) {
             var data=SettlementData.get(server.getServer());
             var s=data.state.settlements.get(settlementId);
-            if (s!=null) { s.residents.stream().filter(r->r.id.equals(getUUID())).findFirst().ifPresent(r->space.magnitoshka.settlements.domain.BuilderAssignments.release(s,r));s.residents.removeIf(r->r.id.equals(getUUID())); data.setDirty(); }
+            if (s!=null) { s.residents.stream().filter(r->r.id.equals(getUUID())).findFirst().ifPresent(r->space.magnitoshka.settlements.domain.BuilderAssignments.retire(s,r));s.residents.removeIf(r->r.id.equals(getUUID())); data.setDirty(); }
         }
         super.die(cause);
     }

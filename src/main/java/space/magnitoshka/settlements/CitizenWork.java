@@ -18,6 +18,7 @@ import space.magnitoshka.settlements.domain.*;
 /** One bounded work step per second, per materialized citizen. Never runs on the client. */
 public final class CitizenWork {
     private int searchCursor,fieldCursor;
+    private final Map<UUID,Integer> unreachableSaplings=new HashMap<>();
     private List<int[]> searchOffsets=List.of();
     private final ArrayDeque<BlockPos> treeLogs=new ArrayDeque<>();
     private BlockPos treeBase;
@@ -29,10 +30,23 @@ public final class CitizenWork {
             var tool=switch(r.profession) {case "builder","lumberjack"->Items.STONE_AXE;case "miner"->Items.STONE_PICKAXE;case "farmer"->Items.STONE_HOE;default->Items.AIR;};
             citizen.setItemSlot(EquipmentSlot.MAINHAND,tool==Items.AIR?ItemStack.EMPTY:new ItemStack(tool));
         }
+        boolean previousCargo=java.util.Arrays.stream(r.builderInventory.slots).anyMatch(slot->slot.count>0&&
+            (slot.origin.equals("harvest")&&!r.profession.equals("lumberjack")||slot.origin.equals("courier")&&!r.profession.equals("courier")));
+        if(previousCargo) {
+            var from=s.buildings.stream().filter(b->b.id.equals(r.deliveryHut)).findFirst().orElse(null);
+            if(!returnToHall(citizen,s,from,r))return;
+            for(var slot:r.builderInventory.slots)if(slot.count>0&&(slot.origin.equals("harvest")||slot.origin.equals("courier"))) {
+                int accepted=s.deposit(slot.item,slot.count,Construction.capacity(s));slot.count-=accepted;
+                if(slot.count==0) {slot.item="";slot.origin="";}
+                if(accepted>0)data.setDirty();
+            }
+            r.workStatus=r.builderInventory.size()>0?"full":"delivering";return;
+        }
         if(r.workEfficiency()<=0) {r.workStatus="starving";citizen.getNavigation().stop();return;}
         switch(r.profession) {
             case "builder" -> build(citizen,level,data,s,r);
             case "lumberjack","miner","farmer" -> produce(citizen,level,data,s,r);
+            case "courier" -> courier(citizen,level,data,s,r);
             default -> r.workStatus="idle";
         }
     }
@@ -257,7 +271,7 @@ public final class CitizenWork {
         var workplace=s.buildings.stream().filter(b->b.complete&&b.id.equals(r.workplace)).findFirst().orElse(null);
         String required=switch(r.profession){case "lumberjack"->"lumber_hut";case "miner"->"mine";default->"field";};
         if(workplace==null||!workplace.type.equals(required)) {r.workStatus="no_workplace";return;}
-        if(s.stored()>=Construction.capacity(s)) {r.workStatus="full";return;}
+        if(!r.profession.equals("lumberjack")&&s.stored()>=Construction.capacity(s)) {r.workStatus="full";return;}
         int seconds=switch(r.profession){case "lumberjack"->SettlementConfig.LUMBER_SECONDS.get();case "miner"->SettlementConfig.MINE_SECONDS.get();default->SettlementConfig.FARM_SECONDS.get();};
         var entrance=new BlockPos(workplace.x,workplace.y,workplace.z-BuildingType.byId(workplace.type).halfDepth-1);
         if(!r.profession.equals("lumberjack")&&!approach(citizen,entrance,r,4))return;
@@ -276,8 +290,110 @@ public final class CitizenWork {
             case "farmer" -> farm(citizen,level,data,s,r,workplace);
         }
     }
+    private void courier(CitizenEntity citizen,ServerLevel level,SettlementData data,Settlement s,Resident r) {
+        var carried=java.util.Arrays.stream(r.builderInventory.slots).filter(slot->slot.count>0).findFirst().orElse(null);
+        citizen.setItemSlot(EquipmentSlot.MAINHAND,carried==null?ItemStack.EMPTY:
+            new ItemStack(BuiltInRegistries.ITEM.getValue(Identifier.parse(carried.item)),carried.count));
+        var warehouse=s.buildings.stream().filter(b->b.complete&&b.type.equals("warehouse")&&b.id.equals(r.workplace)).findFirst().orElse(null);
+        if(warehouse==null) {r.workStatus="no_workplace";return;}
+        if(r.builderInventory.size()>0) {
+            var from=s.buildings.stream().filter(b->b.id.equals(r.deliveryHut)).findFirst().orElse(null);
+            if(!travel(citizen,data,s,from,warehouse,r))return;
+            var at=new BlockPos(warehouse.x-2,warehouse.y,warehouse.z+1);
+            if(!approach(citizen,at,r,2))return;
+            if(!level.hasChunkAt(at)||!level.getBlockState(at).is(Blocks.BARREL)) {r.workStatus="no_storage";return;}
+            int delivered=0;
+            for(var slot:r.builderInventory.slots)if(slot.count>0) {
+                int accepted=s.deposit(slot.item,slot.count,Construction.capacity(s));slot.count-=accepted;delivered+=accepted;
+                if(slot.count==0) {slot.item="";slot.origin="";}
+            }
+            if(delivered>0) {Construction.award(r,SettlementConfig.WORK_XP.get());data.setDirty();}
+            r.workStatus=r.builderInventory.size()>0?"full":"delivering";
+            if(r.builderInventory.size()==0) {r.deliveryHut="";r.routeDeparted=false;}
+            return;
+        }
+        if(s.stored()>=Construction.capacity(s)) {r.workStatus="full";return;}
+        var target=s.buildings.stream().filter(b->b.complete&&b.type.equals("lumber_hut"))
+            .filter(b->{var inventory=HutStorage.get(level,b);if(inventory==null)return false;
+                for(int i=0;i<inventory.getContainerSize();i++)if(HutStorage.transportable(inventory.getItem(i)))return true;return false;})
+            .min(Comparator.comparingDouble(b->citizen.distanceToSqr(b.x,b.y,b.z))).orElse(null);
+        if(target==null) {r.workStatus="no_delivery";return;}
+        r.deliveryHut=target.id;
+        if(!travel(citizen,data,s,warehouse,target,r)||!approach(citizen,HutStorage.position(target),r,2))return;
+        var inventory=HutStorage.get(level,target);
+        if(inventory!=null&&HutStorage.collect(inventory,r)>0) {r.routeDeparted=false;r.workStatus="loading";data.setDirty();}
+    }
+    private boolean travel(CitizenEntity citizen,SettlementData data,Settlement s,Building from,Building target,Resident r) {
+        var type=BuildingType.byId(target.type);
+        boolean inside=target.contains(citizen.blockPosition().getX(),citizen.blockPosition().getZ(),0)
+            &&Math.abs(citizen.getY()-target.y)<2;
+        if(inside)return true;
+        // Reverse the departure path first. Near the hall, join the destination path.
+        if(!r.routeDeparted&&from!=null&&!from.access.isEmpty()) {
+            int closest=0;double distance=Double.MAX_VALUE;
+            for(int i=0;i<from.access.size();i++) {var p=from.access.get(i);double d=citizen.distanceToSqr(p.x()+.5,p.y(),p.z()+.5);if(d<distance) {closest=i;distance=d;}}
+            if(closest>0&&(distance<25||from.contains(citizen.blockPosition().getX(),citizen.blockPosition().getZ(),1))) {
+                var back=from.access.get(Math.max(0,closest-4));approach(citizen,new BlockPos(back.x(),back.y(),back.z()),r,1);return false;
+            }
+        }
+        if(!r.routeDeparted) {r.routeDeparted=true;data.setDirty();}
+        return target.access.isEmpty()?approach(citizen,new BlockPos(target.x,target.y,target.z-type.halfDepth-1),r,3)
+            :approachAccess(citizen,s,target,target.access.size()-1,r);
+    }
+    private boolean storeHarvest(CitizenEntity citizen,ServerLevel level,SettlementData data,Settlement s,Resident r,Building hut) {
+        r.workStatus="delivering";
+        if(!approach(citizen,HutStorage.position(hut),r,2))return false;
+        var inventory=HutStorage.get(level,hut);
+        if(inventory==null) {r.workStatus="no_storage";return false;}
+        for(var slot:r.builderInventory.slots)if(slot.count>0) {
+            var item=BuiltInRegistries.ITEM.getValue(Identifier.parse(slot.item));
+            int amount=slot.count;
+            if(new ItemStack(item).is(net.minecraft.tags.ItemTags.SAPLINGS))amount=Math.min(amount,Math.max(0,64-HutStorage.count(inventory,item)));
+            int moved=HutStorage.insert(inventory,new ItemStack(item,amount));slot.count-=moved;
+            if(slot.count==0) {slot.item="";slot.origin="";}
+            if(moved>0)data.setDirty();
+        }
+        r.workStatus=r.builderInventory.size()>0?"full":"working";
+        return r.builderInventory.size()==0;
+    }
+    private void collectSaplings(CitizenEntity citizen,ServerLevel level,SettlementData data,Resident r,Building hut) {
+        var inventory=HutStorage.get(level,hut);if(inventory==null)return;
+        for(var drop:level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,citizen.getBoundingBox().inflate(3,2,3))) {
+            if(!drop.isAlive())continue;
+            var stack=drop.getItem();if(!stack.is(net.minecraft.tags.ItemTags.SAPLINGS)||!WarehouseMenu.accepts(stack))continue;
+            var key=BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+            int carried=r.builderInventory.count("harvest",k->k.equals(key));
+            int allowance=Math.max(0,64-HutStorage.count(inventory,stack.getItem())-carried);
+            int moved=r.builderInventory.add(key,"harvest",Math.min(allowance,stack.getCount()));
+            if(moved>0) {var remainder=stack.copy();remainder.shrink(moved);if(remainder.isEmpty())drop.discard();else drop.setItem(remainder);data.setDirty();}
+        }
+    }
     private void lumber(CitizenEntity citizen,ServerLevel level,SettlementData data,Settlement s,Resident r,Building workplace) {
+        var storage=HutStorage.get(level,workplace);
+        if(storage==null) {r.workStatus="no_storage";return;}
+        r.deliveryHut=workplace.id;
+        collectSaplings(citizen,level,data,r,workplace);
+        if(r.fetching||r.builderInventory.size()>=192||(treeLogs.isEmpty()&&r.builderInventory.size()>0)) {
+            r.fetching=true;
+            if(storeHarvest(citizen,level,data,s,r,workplace))r.fetching=false;
+            return;
+        }
         if(treeLogs.isEmpty()) {
+            // Leaves may decay after the logger has already returned to the hut.
+            var drop=level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                new net.minecraft.world.phys.AABB(HutStorage.position(workplace)).inflate(SettlementConfig.WORK_RADIUS.get()),item->{
+                    var stack=item.getItem();var pos=item.blockPosition();
+                    return item.isAlive()&&unreachableSaplings.getOrDefault(item.getUUID(),0)<=citizen.tickCount&&stack.is(net.minecraft.tags.ItemTags.SAPLINGS)&&WarehouseMenu.accepts(stack)
+                        &&Math.hypot((double)pos.getX()-s.x,(double)pos.getZ()-s.z)<=Construction.radius(s)
+                        &&HutStorage.count(storage,stack.getItem())<64
+                        &&hasCargoRoom(r,BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
+                }).stream().min(Comparator.comparingDouble(citizen::distanceToSqr)).orElse(null);
+            if(drop!=null) {
+                approach(citizen,drop.blockPosition(),r,2);
+                if(!r.workStatus.equals("blocked"))return;
+                unreachableSaplings.put(drop.getUUID(),citizen.tickCount+200);
+                unreachableSaplings.entrySet().removeIf(entry->entry.getValue()<citizen.tickCount);
+            }
             int radius=SettlementConfig.WORK_RADIUS.get(),side=radius*2+1;
             if(searchOffsets.size()!=side*side) {
                 var offsets=new ArrayList<int[]>();
@@ -307,13 +423,19 @@ public final class CitizenWork {
         var state=level.getBlockState(target);
         if(!state.is(BlockTags.LOGS)) {treeLogs.remove();return;}
         if(!Construction.canChange(level,target,s.owner)) {r.workStatus="blocked";treeLogs.clear();return;}
+        String logKey=BuiltInRegistries.ITEM.getKey(state.getBlock().asItem()).toString();
+        if(!hasCargoRoom(r,logKey)) {r.fetching=true;storeHarvest(citizen,level,data,s,r,workplace);return;}
         if(level.destroyBlock(target,false,citizen)) {
             String key=BuiltInRegistries.ITEM.getKey(state.getBlock().asItem()).toString();
-            s.deposit(key,1,Construction.capacity(s));treeLogs.remove();r.workTicks=0;
+            r.builderInventory.add(key,"harvest",1);treeLogs.remove();r.workTicks=0;
             r.workStatus="working";Construction.award(r,SettlementConfig.WORK_XP.get());
             citizen.swingForAttack(InteractionHand.MAIN_HAND);data.setDirty();
             if(treeLogs.isEmpty())replant(level,s);
         } else r.workStatus="blocked";
+    }
+    private boolean hasCargoRoom(Resident r,String key) {
+        for(var slot:r.builderInventory.slots)if(slot.count==0||(slot.origin.equals("harvest")&&slot.item.equals(key)&&slot.count<64))return true;
+        return false;
     }
     private boolean hasLeaves(ServerLevel level,BlockPos base) {
         for(int dy=2;dy<=24;dy+=2)for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++) {

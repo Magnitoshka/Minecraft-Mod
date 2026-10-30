@@ -15,7 +15,8 @@ public final class SettlementNetwork {
     private static final com.google.gson.Gson SNAPSHOT_JSON=SettlementData.GSON.newBuilder()
         .addSerializationExclusionStrategy(new com.google.gson.ExclusionStrategy() {
             public boolean shouldSkipField(com.google.gson.FieldAttributes field) {
-                return field.getDeclaringClass()==space.magnitoshka.settlements.domain.Building.class&&java.util.Set.of("preparation","columns","access","reserved").contains(field.getName());
+                return field.getDeclaringClass()==Settlement.class&&field.getName().equals("departedCargo")
+                    ||field.getDeclaringClass()==space.magnitoshka.settlements.domain.Building.class&&java.util.Set.of("preparation","columns","access","reserved").contains(field.getName());
             }
             public boolean shouldSkipClass(Class<?> type) {return false;}
         }).create();
@@ -74,6 +75,7 @@ public final class SettlementNetwork {
         send(player,settlement,resident == null ? "" : resident.toString(),true);
     }
     public static void close(UUID player) { VIEWERS.remove(player); CONVERSATIONS.remove(player); LAST_TERRAIN.remove(player); }
+    public static void endDialogue(UUID player) {CONVERSATIONS.remove(player);}
     public static boolean talking(CitizenEntity citizen) {
         var server=citizen.level().getServer();
         CONVERSATIONS.entrySet().removeIf(entry->{

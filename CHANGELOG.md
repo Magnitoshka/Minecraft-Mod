@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0+26.3 — 2026-10-30
+
+Exclusive persistent builder assignments and four-slot material trips, owner conversations that stop residents, traffic yielding, local-height sites with sloped access preserving existing roads, a paginated resident roster, physical lumber-hut barrels with a one-time gift of10 oak saplings, real wood/sapling collection and warehouse couriers. Production cargo stays carried on profession changes; departures leave physical items rather than bypassing storage capacity. Static review and full Java25 compilation with Forge event validators passed; cached packaging and SHA256 verification replace Gradle in this socket-restricted session. No game/server/test runtime.
+
 ## 0.3.0+26.3 — 2026-10-30
 
 Fixed SDL map placement input and visible action feedback; added loaded-only terrain/height survey and placement hints, per-blueprint resource icons, live overhead builder activity, a native warehouse menu with player inventory and multi-stack deposits, and post-result notifications. Fixed numeric NBT boolean loading, repeat starter banners and persisted territory radii; removed generated hall roof banners. Completed the player-feedback queue through static review and compilation only. Installed/applied ub-mode for the final code edit; optional quality tools were absent and skipped per user instruction.

@@ -11,7 +11,7 @@ public final class BuilderAssignments {
     }
     public static void unload(Settlement s,Resident r) {
         var job=s.buildings.stream().filter(b->b.id.equals(r.cargoJob)).findFirst().orElse(null);
-        for(var slot:r.builderInventory.slots)if(slot.count>0) {
+        for(var slot:r.builderInventory.slots)if(slot.count>0&&!slot.origin.equals("harvest")&&!slot.origin.equals("courier")) {
             if(job!=null&&!job.complete&&slot.origin.equals("base"))job.reserved.merge(slot.item,slot.count,Integer::sum);
             else if(job!=null&&!job.complete&&slot.origin.equals("prepaid_fill"))job.prepaidFill+=slot.count;
             else s.resources.merge(slot.item,slot.count,Integer::sum);
@@ -23,6 +23,13 @@ public final class BuilderAssignments {
         unload(s,r);
         for(var b:s.buildings)if(b.assignedBuilder.equals(r.id.toString())) {b.assignedBuilder="";if(!b.complete)b.status="waiting_builder";}
         r.taskBuilding="";r.fetching=false;
+    }
+    public static void retire(Settlement s,Resident r) {
+        release(s,r);
+        // Departing residents leave real production cargo; it never bypasses warehouse capacity.
+        for(var slot:r.builderInventory.slots)if(slot.count>0) {
+            s.departedCargo.merge(slot.item,slot.count,Integer::sum);slot.count=0;slot.item="";slot.origin="";
+        }
     }
     public static boolean reconcile(Settlement s) {
         boolean changed=false;

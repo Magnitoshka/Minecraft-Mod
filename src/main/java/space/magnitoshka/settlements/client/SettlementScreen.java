@@ -31,7 +31,7 @@ public final class SettlementScreen extends Screen {
     private Component feedback;
     private boolean feedbackSuccess,feedbackPending;
     private long feedbackUntil;
-    private int tab, overviewPage, residentIndex, resourcePage, professionIndex, catalogPage;
+    private int tab, overviewPage, residentIndex, resourcePage, professionIndex, catalogPage, rosterPage;
     private String citizen="", selectedBuilding="", buildChoice="", professionResident="";
     private boolean buildingDetails;
     private EditBox rename, amount;
@@ -85,7 +85,7 @@ public final class SettlementScreen extends Screen {
             residentIndex=resourcePage=0;panX=panZ=0;
         }
         if(!next.selectedResident().isEmpty()) {citizen=next.selectedResident();tab=1;peopleChanged=true;}
-        if(switched || peopleChanged || tab==2 && resourcesChanged)rebuildWidgets();
+        if(switched || peopleChanged || tab==0&&overviewPage==3 || tab==2 && resourcesChanged)rebuildWidgets();
     }
     private MedievalButton button(int x,int y,int w,Component label,Runnable action) {
         var button=new MedievalButton(x,y,w,18,label,action);
@@ -93,6 +93,7 @@ public final class SettlementScreen extends Screen {
         return button;
     }
     private void tab(int value) {
+        if(value!=1)SettlementNetwork.request("endDialogue","","","",0);
         saveDrafts();tab=value;buildChoice="";buildingDetails=false;rebuildWidgets();
     }
     private void action(String key,String text,long value) {
@@ -109,11 +110,13 @@ public final class SettlementScreen extends Screen {
             .orElse(list.get(Math.floorMod(residentIndex,list.size())));
     }
     private void selectResident(int step) {
+        SettlementNetwork.request("endDialogue","","","",0);
         var list=snapshot.settlement().residents;if(list.isEmpty())return;
         var current=resident();
         residentIndex=Math.floorMod(list.indexOf(current)+step,list.size());
         citizen=list.get(residentIndex).id.toString();rebuildWidgets();
     }
+    private int rosterRows() {return Math.max(1,(height-175)/36);}
     private int resourceRows() {return Math.max(1,(height-190)/21);}
 
     @Override protected void init() {
@@ -148,9 +151,20 @@ public final class SettlementScreen extends Screen {
     }
     private void overviewWidgets() {
         int x=panelX+8,w=panelW-16;
-        button(x,91,18,Component.literal("<"),()->{saveDrafts();overviewPage=Math.floorMod(overviewPage-1,3);rebuildWidgets();});
-        button(x+w-18,91,18,Component.literal(">"),()->{saveDrafts();overviewPage=(overviewPage+1)%3;rebuildWidgets();});
-        if(overviewPage==1) {
+        button(x,91,18,Component.literal("<"),()->{saveDrafts();overviewPage=Math.floorMod(overviewPage-1,4);rebuildWidgets();});
+        button(x+w-18,91,18,Component.literal(">"),()->{saveDrafts();overviewPage=(overviewPage+1)%4;rebuildWidgets();});
+        if(overviewPage==3) {
+            var residents=snapshot.settlement().residents;int rows=rosterRows();
+            rosterPage=Math.clamp(rosterPage,0,Math.max(0,(residents.size()-1)/rows));
+            for(int i=rosterPage*rows;i<Math.min(residents.size(),(rosterPage+1)*rows);i++) {
+                var r=residents.get(i);
+                var label=Component.literal(r.name+" · ").append(profession(r.profession));
+                button(x,116+(i-rosterPage*rows)*36,w,Component.literal(r.name),()->{citizen=r.id.toString();tab=1;rebuildWidgets();})
+                    .setTooltip(Tooltip.create(label.copy().append(" · ").append(tr("status."+r.workStatus))));
+            }
+            button(x,height-51,(w-4)/2,tr("previous"),()->{rosterPage=Math.max(0,rosterPage-1);rebuildWidgets();});
+            button(x+(w+4)/2,height-51,(w-4)/2,tr("next"),()->{rosterPage++;rebuildWidgets();});
+        } else if(overviewPage==1) {
             amount=new EditBox(font,x,143,w,18,tr("amount"));amount.setMaxLength(18);amount.setValue(amountDraft);addRenderableWidget(amount);
             button(x,168,(w-4)/2,tr("toTreasury"),()->action("depositCoins","",coins()));
             button(x+(w+4)/2,168,(w-4)/2,tr("toWallet"),()->action("withdrawCoins","",coins()));
@@ -392,7 +406,7 @@ public final class SettlementScreen extends Screen {
         return "";
     }
     private static int professionColor(String profession) {
-        return switch(profession) {case "builder"->0xFFE4B34F;case "lumberjack"->0xFF518651;case "miner"->0xFF858A9A;case "farmer"->0xFFCC8550;default->0xFFC2B79E;};
+        return switch(profession) {case "builder"->0xFFE4B34F;case "lumberjack"->0xFF518651;case "miner"->0xFF858A9A;case "farmer"->0xFFCC8550;case "courier"->0xFF6DA5B7;default->0xFFC2B79E;};
     }
     private Component buildingState(Building b) {
         if(b.complete)return tr("buildingReady");
@@ -401,7 +415,7 @@ public final class SettlementScreen extends Screen {
     }
     private void drawOverview(GuiGraphicsExtractor g) {
         int x=panelX+8,w=panelW-16;
-        centered(g,tr(new String[]{"ledgerSummary","ledgerEconomy","ledgerManage"}[overviewPage]),x+21,96,w-42,GOLD);
+        centered(g,tr(new String[]{"ledgerSummary","ledgerEconomy","ledgerManage","citizens"}[overviewPage]),x+21,96,w-42,GOLD);
         var s=snapshot.settlement();
         if(overviewPage==0) {
             text(g,tr("population",s.residents.size(),snapshot.beds()),x,119,w,LIGHT);
@@ -413,6 +427,13 @@ public final class SettlementScreen extends Screen {
             text(g,tr("treasury",s.treasury),x,116,w,LIGHT);
             text(g,tr("wallet",snapshot.wallet()),x,130,w,LIGHT);
             text(g,tr("amount"),x,193,w,0xFFC4AA7D);
+        }
+        if(overviewPage==3) {
+            var residents=s.residents;int rows=rosterRows();
+            for(int i=rosterPage*rows;i<Math.min(residents.size(),(rosterPage+1)*rows);i++) {
+                var r=residents.get(i);
+                text(g,profession(r.profession).copy().append(" · ").append(tr("status."+r.workStatus)),x,137+(i-rosterPage*rows)*36,w,0xFFC4AA7D);
+            }
         }
         text(g,tr(overviewPage==2?"nearHall":"ledgerHint"),x,height-30,w,0xFFC4AA7D);
     }
@@ -449,7 +470,7 @@ public final class SettlementScreen extends Screen {
             text(g,buildingName(b.type),x,98,w,GOLD);
             text(g,buildingState(b),x,117,w,LIGHT);
             text(g,tr("status."+(b.status==null?"idle":b.status)),x,132,w,0xFFC4AA7D);
-            text(g,Component.literal(b.x+", "+b.z),x,147,w,LIGHT);
+            text(g,Component.literal(b.x+", "+b.y+", "+b.z),x,147,w,LIGHT);
             int progress=b.totalSteps()<=0?0:(int)((long)Math.clamp(b.completedSteps(),0,b.totalSteps())*(w-2)/b.totalSteps());
             g.fill(x,161,x+w,167,0xFF211B14);g.fill(x+1,162,x+1+progress,166,0xFFC8A05D);
             if(!b.complete&&b.foundationRemaining>0)text(g,tr("foundationRemaining",b.foundationRemaining),x,177,w,0xFFC4AA7D);
@@ -490,13 +511,13 @@ public final class SettlementScreen extends Screen {
             for(var r:s.residents) {
                 var p=snapshot.positions().get(r.id.toString());if(p==null)continue;
                 if(Math.hypot(event.x()-mapX(p[0]-s.x),event.y()-mapZ(p[1]-s.z))<6) {
-                    citizen=r.id.toString();tab=1;rebuildWidgets();return true;
+                    SettlementNetwork.request("endDialogue","","","",0);citizen=r.id.toString();tab=1;rebuildWidgets();return true;
                 }
             }
             for(var b:buildings()) {
                 int hw=halfWidth(b.type);
                 if(Math.abs(event.x()-mapX(b.x-s.x))<Math.max(5,(hw+1)*zoom)&&Math.abs(event.y()-mapZ(b.z-s.z))<Math.max(5,(halfDepth(b.type)+1)*zoom)) {
-                    selectedBuilding=b.id;buildingDetails=true;tab=3;rebuildWidgets();return true;
+                    SettlementNetwork.request("endDialogue","","","",0);selectedBuilding=b.id;buildingDetails=true;tab=3;rebuildWidgets();return true;
                 }
             }
         }

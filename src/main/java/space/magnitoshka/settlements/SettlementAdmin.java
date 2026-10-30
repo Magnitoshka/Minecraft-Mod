@@ -90,7 +90,7 @@ public final class SettlementAdmin {
             }
         } else {
             if(count>s.residents.size())throw error("residents");
-            for(int i=0;i<count;i++) {var r=s.residents.removeLast();space.magnitoshka.settlements.domain.BuilderAssignments.release(s,r);var entity=level.getEntity(r.id);if(entity!=null)entity.discard();}
+            for(int i=0;i<count;i++) {var r=s.residents.removeLast();space.magnitoshka.settlements.domain.BuilderAssignments.retire(s,r);var entity=level.getEntity(r.id);if(entity!=null)entity.discard();}
         }
         SettlementData.get(source.getServer()).setDirty();refresh(source);return success(c,"residents",s.residents.size());
     }

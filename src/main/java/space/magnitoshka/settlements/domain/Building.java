@@ -18,6 +18,7 @@ public final class Building {
     public java.util.Map<String,Integer> reserved=new java.util.HashMap<>();
     public boolean logisticsInitialized,starterSaplings;
     public int materialProgress,prepaidFill;
+    public int starterSaplingsRemaining=-1;
     public int prepared,preparationTotal,standX,standY,standZ;
     public boolean hasStand,preparationStarted;
     public int totalSteps() {return total+Math.max(preparationTotal,preparation.size());}

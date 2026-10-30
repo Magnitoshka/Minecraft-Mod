@@ -48,7 +48,7 @@ public final class BuildingTemplates {
                 }
             }
             case WAREHOUSE -> {add(out,-2,0,1,Blocks.BARREL.defaultBlockState());add(out,2,0,1,Blocks.BARREL.defaultBlockState());}
-            case LUMBER_HUT -> add(out,1,0,1,Blocks.CRAFTING_TABLE.defaultBlockState());
+            case LUMBER_HUT -> {add(out,1,0,1,Blocks.CRAFTING_TABLE.defaultBlockState());add(out,-1,0,1,Blocks.BARREL.defaultBlockState());}
             case MINE -> add(out,1,0,1,Blocks.FURNACE.defaultBlockState());
             default -> {}
         }
