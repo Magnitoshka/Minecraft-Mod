@@ -10,7 +10,15 @@ import net.minecraftforge.network.PacketDistributor;
 import space.magnitoshka.settlements.domain.Settlement;
 
 public final class SettlementNetwork {
-    private static final SimpleChannel CHANNEL = ChannelBuilder.named(Settlements.MODID + ":main").networkProtocolVersion(3).simpleChannel();
+    private static final SimpleChannel CHANNEL = ChannelBuilder.named(Settlements.MODID + ":main").networkProtocolVersion(4).simpleChannel();
+    // Detailed edit plans belong to the save, not the once-per-second UI snapshot.
+    private static final com.google.gson.Gson SNAPSHOT_JSON=SettlementData.GSON.newBuilder()
+        .addSerializationExclusionStrategy(new com.google.gson.ExclusionStrategy() {
+            public boolean shouldSkipField(com.google.gson.FieldAttributes field) {
+                return field.getDeclaringClass()==space.magnitoshka.settlements.domain.Building.class&&field.getName().equals("preparation");
+            }
+            public boolean shouldSkipClass(Class<?> type) {return false;}
+        }).create();
     private static final Map<UUID, UUID> VIEWERS = new HashMap<>();
     private static final Map<UUID,TerrainMap.Survey> LAST_TERRAIN=new HashMap<>();
     public static Consumer<TerrainMap.Survey> terrainReceiver=survey->{};
@@ -27,7 +35,7 @@ public final class SettlementNetwork {
             .decoder(b -> new Action(b.readUtf(32),b.readUtf(36),b.readUtf(36),b.readUtf(64),b.readLong()))
             .consumerMainThread((m,c) -> { if (c.getSender() != null) ServerSettlements.action(c.getSender(),m); }).add();
         CHANNEL.messageBuilder(Snapshot.class).direction(PacketFlow.CLIENTBOUND)
-            .encoder((m,b) -> b.writeUtf(SettlementData.GSON.toJson(m),262144))
+            .encoder((m,b) -> b.writeUtf(SNAPSHOT_JSON.toJson(m),262144))
             .decoder(b -> SettlementData.GSON.fromJson(b.readUtf(262144),Snapshot.class))
             .consumerMainThread((m,c) -> clientReceiver.accept(m)).add();
         CHANNEL.messageBuilder(TerrainMap.Survey.class).direction(PacketFlow.CLIENTBOUND)

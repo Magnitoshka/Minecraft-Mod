@@ -47,8 +47,9 @@ public final class CitizenWork {
         var type=BuildingType.byId(job.type);
         if(type==null) {block(level,data,s,r,job);return;}
         BlockPos origin=new BlockPos(job.x,job.y,job.z);
-        var entrance=origin.offset(0,0,-type.halfDepth-1);
+        var entrance=job.hasStand?new BlockPos(job.standX,job.standY,job.standZ):origin.offset(0,0,-type.halfDepth-1);
         if(!approach(citizen,entrance,r,4)) {if(r.workStatus.equals("blocked"))block(level,data,s,r,job);return;}
+        if(job.prepared<job.preparation.size()) {prepare(citizen,level,data,s,r,job);return;}
         var pieces=BuildingTemplates.pieces(type);
         int count=Math.max(1,(int)Math.floor(SettlementConfig.BUILD_RATE.get()*r.workEfficiency()));
         boolean changed=false;
@@ -83,11 +84,41 @@ public final class CitizenWork {
             }
             if(missing>=0) {job.progress=missing;block(level,data,s,r,job);}
             else {
-                job.complete=true;job.status="complete";changed=true;r.workStatus="idle";
+                job.complete=true;job.status="complete";job.preparation.clear();changed=true;r.workStatus="idle";
                 SettlementNetwork.ownerNotice(level.getServer(),s,true,"action.smartsettlements.construction_complete",net.minecraft.network.chat.Component.translatable("building.smartsettlements."+job.type));
             }
         }
         if(changed) {citizen.swingForAttack(InteractionHand.MAIN_HAND);data.setDirty();}
+    }
+    private void prepare(CitizenEntity citizen,ServerLevel level,SettlementData data,Settlement s,Resident r,Building job) {
+        int count=Math.max(1,(int)Math.floor(SettlementConfig.BUILD_RATE.get()*r.workEfficiency()));
+        for(int i=0;i<count&&job.prepared<job.preparation.size();i++) {
+            var edit=job.preparation.get(job.prepared);var at=new BlockPos(edit.x,edit.y,edit.z);
+            if(!Construction.canChange(level,at,s.owner)||level.getBlockEntity(at)!=null||!level.getFluidState(at).isEmpty()) {
+                block(level,data,s,r,job);return;
+            }
+            var state=level.getBlockState(at);
+            boolean alreadyDone=edit.fill?state.is(Blocks.COBBLESTONE):state.isAir();
+            if(!alreadyDone) {
+                boolean safe=edit.fill?state.canBeReplaced()&&level.getBlockState(at.below()).isFaceSturdy(level,at.below(),net.minecraft.core.Direction.UP):SitePreparation.removable(state)
+                    &&BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString().equals(edit.expected);
+                if(!safe||!level.setBlock(at,edit.fill?Blocks.COBBLESTONE.defaultBlockState():Blocks.AIR.defaultBlockState(),3)) {
+                    block(level,data,s,r,job);return;
+                }
+                if(!edit.fill&&state.is(BlockTags.LOGS)) {
+                    var key=BuiltInRegistries.ITEM.getKey(state.getBlock().asItem()).toString();
+                    s.deposit(key,1,Construction.capacity(s));
+                }
+                if(!job.preparationStarted) {
+                    job.preparationStarted=true;
+                    SettlementNetwork.ownerNotice(level.getServer(),s,true,"action.smartsettlements.preparation_started",
+                        net.minecraft.network.chat.Component.translatable("building.smartsettlements."+job.type));
+                }
+            }
+            job.prepared++;r.workStatus="leveling";job.status="leveling";
+            Construction.award(r,SettlementConfig.BUILDER_XP.get());data.setDirty();
+            citizen.swingForAttack(InteractionHand.MAIN_HAND);
+        }
     }
     private void block(ServerLevel level,SettlementData data,Settlement s,Resident r,Building job) {
         boolean newlyBlocked=!"blocked".equals(job.status);

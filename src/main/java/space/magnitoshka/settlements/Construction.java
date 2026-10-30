@@ -29,26 +29,21 @@ public final class Construction {
             if(other!=null&&Math.abs((long)x-b.x)<=type.halfWidth+other.halfWidth+1&&Math.abs((long)z-b.z)<=type.halfDepth+other.halfDepth+1)return "collision";
         }
         if(!level.hasChunkAt(new BlockPos(x-type.halfWidth,s.y,z-type.halfDepth))||!level.hasChunkAt(new BlockPos(x+type.halfWidth,s.y,z+type.halfDepth)))return "unloaded";
-        int y=level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,x,z);
-        if(y<=level.getMinY()+1||y+4>=level.getMaxY())return "site";
-        for(int ox=-type.halfWidth;ox<=type.halfWidth;ox++)for(int oz=-type.halfDepth;oz<=type.halfDepth;oz++) {
-            var floor=new BlockPos(x+ox,y-1,z+oz);
-            if(!level.getWorldBorder().isWithinBounds(floor)||!level.mayInteract(player,floor)
-                ||level.getBlockEntity(floor)!=null||!level.getBlockState(floor).isFaceSturdy(level,floor,Direction.UP))return "site";
-            if(type==BuildingType.FIELD&&!level.getBlockState(floor.below()).isFaceSturdy(level,floor.below(),Direction.UP))return "site";
-            for(int h=0;h<=4;h++) {
-                var at=floor.above(1+h);
-                if(!level.mayInteract(player,at)||!level.getBlockState(at).canBeReplaced()||!level.getFluidState(at).isEmpty())return "site";
-            }
-        }
-        var entrance=new BlockPos(x,y,z-type.halfDepth-1);
-        if(!walkable(level,entrance)||!reachable(level,new BlockPos(s.x,s.y,s.z-4),entrance,s))return "path";
-        if(wood(s)<type.woodCost||s.resources.getOrDefault("minecraft:cobblestone",0)<type.stoneCost)return "materials";
+        var plan=SitePreparation.plan(level,player,type,x,z);
+        if(plan==null)return "site";
+        int y=plan.y();
+        if(!level.hasChunkAt(new BlockPos(x,y,z-type.halfDepth-1)))return "unloaded";
+        var entrance=new BlockPos(x,level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,x,z-type.halfDepth-1),z-type.halfDepth-1);
+        if(Math.abs(entrance.getY()-y)>1||!walkable(level,entrance)||!reachable(level,new BlockPos(s.x,s.y,s.z-4),entrance,s))return "path";
+        if(wood(s)<type.woodCost||s.resources.getOrDefault("minecraft:cobblestone",0)<type.stoneCost+plan.fill())return "materials";
         // Reserve the entire construction price atomically after every placement check passed.
         int remaining=type.woodCost;
         for(var key:s.resources.keySet().stream().sorted().toList())if(isWood(key)&&remaining>0)remaining-=s.withdraw(key,remaining);
-        s.withdraw("minecraft:cobblestone",type.stoneCost);
-        s.buildings.add(new Building(type,x,y,z,BuildingTemplates.pieces(type).size()));
+        s.withdraw("minecraft:cobblestone",type.stoneCost+plan.fill());
+        var building=new Building(type,x,y,z,BuildingTemplates.pieces(type).size());
+        building.preparation=plan.edits();building.preparationTotal=plan.edits().size();building.hasStand=true;
+        building.standX=entrance.getX();building.standY=entrance.getY();building.standZ=entrance.getZ();
+        s.buildings.add(building);
         return "ok";
     }
     private static boolean isWood(String key) {

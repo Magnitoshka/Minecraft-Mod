@@ -57,9 +57,9 @@
   "message.smartsettlements.build_queue_full": "Очередь строительства заполнена (16 объектов).",
   "message.smartsettlements.build_collision": "Слишком близко к зданию или стройплощадке.",
   "message.smartsettlements.build_unloaded": "Подойди ближе: участок ещё не загружен.",
-  "message.smartsettlements.build_site": "Нужен ровный свободный участок с опорой и высотой 5 блоков.",
-  "message.smartsettlements.build_path": "Нет прохода от главного здания ко входу постройки.",
-  "message.smartsettlements.build_materials": "На складе не хватает брёвен или булыжника.",
+  "message.smartsettlements.build_site": "Участок нельзя подготовить: допускается срез до 4 и засыпка до 3 блоков. Уберите постройки; вода и защищённые блоки запрещены.",
+  "message.smartsettlements.build_path": "Нет прохода от ратуши или перепад у будущего входа больше 1 блока.",
+  "message.smartsettlements.build_materials": "На складе не хватает брёвен или булыжника. Засыпка требует ещё 1 булыжник за каждый блок.",
   "ui.smartsettlements.construction": "Постройки",
   "ui.smartsettlements.ledgerSummary": "Сводка",
   "ui.smartsettlements.ledgerEconomy": "Финансы",
@@ -102,7 +102,7 @@
   "ui.smartsettlements.placement.collision": "Слишком близко другое здание или стройплощадка.",
   "ui.smartsettlements.placement.unknown": "Рельеф здесь неизвестен. Дождись обновления карты или подойди ближе.",
   "ui.smartsettlements.placement.water": "На участке есть вода или лава.",
-  "ui.smartsettlements.placement.uneven": "На участке перепад высоты. Подготовь ровное основание.",
+  "ui.smartsettlements.placement.uneven": "Слишком большой перепад: срез до 4 блоков, засыпка до 3.",
   "ui.smartsettlements.placement.blocked": "Перед строительством расчисти участок.",
   "activity.smartsettlements.building": "Строит %s",
   "activity.smartsettlements.walking_builder": "Идёт на стройку",
@@ -143,5 +143,9 @@
   "ui.smartsettlements.terrain.snow": "Снег",
   "ui.smartsettlements.terrain.forest": "Деревья",
   "ui.smartsettlements.terrain.structure": "Постройка",
-  "ui.smartsettlements.terrain.lava": "Лава"
+  "ui.smartsettlements.terrain.lava": "Лава",
+  "ui.smartsettlements.status.leveling": "Разравнивает площадку",
+  "ui.smartsettlements.prepareBuilding": "Разместить: строитель подготовит землю. Засыпка — 1 булыжник за блок.",
+  "ui.smartsettlements.foundationCost": "Засыпка ям: дополнительно 1 булыжник за блок со склада.",
+  "action.smartsettlements.preparation_started": "Строитель начал подготовку земли: %s."
 }

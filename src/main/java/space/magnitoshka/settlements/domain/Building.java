@@ -1,12 +1,19 @@
 package space.magnitoshka.settlements.domain;
 
 import java.util.UUID;
+import java.util.List;
+import java.util.ArrayList;
 
 /** Progress is a stable cursor in the deterministic template, persisted across reloads. */
 public final class Building {
     public String id=UUID.randomUUID().toString();
     public String type="house",status="waiting_builder";
     public int x,y,z,progress,total;
+    public List<SiteEdit> preparation=new ArrayList<>();
+    public int prepared,preparationTotal,standX,standY,standZ;
+    public boolean hasStand,preparationStarted;
+    public int totalSteps() {return total+Math.max(preparationTotal,preparation.size());}
+    public int completedSteps() {return progress+prepared;}
     public boolean complete;
     public boolean started;
     public Building() {}

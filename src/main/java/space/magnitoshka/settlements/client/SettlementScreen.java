@@ -207,7 +207,7 @@ public final class SettlementScreen extends Screen {
                 buildChoice=buildChoice.equals(TYPES[index])?"":TYPES[index];selectedBuilding="";
             },()->buildChoice.equals(TYPES[index]));
             var type=BuildingType.byId(TYPES[i]);
-            blueprint.setTooltip(Tooltip.create(buildingName(TYPES[i]).copy().append("\n").append(tr("buildingCost",type.woodCost,type.stoneCost))));
+            blueprint.setTooltip(Tooltip.create(buildingName(TYPES[i]).copy().append("\n").append(tr("buildingCost",type.woodCost,type.stoneCost)).append("\n").append(tr("foundationCost"))));
             addRenderableWidget(blueprint);
         }
         button(x,height-42,18,Component.literal("<"),()->{catalogPage=Math.floorMod(catalogPage-1,pages);rebuildWidgets();});
@@ -293,7 +293,7 @@ public final class SettlementScreen extends Screen {
             if(!b.complete) {
                 int w=Math.max(9,(int)(6*zoom));
                 g.fill(x-w/2,z+5,x+w/2,z+7,0xFF4D3D27);
-                int progress=b.total<=0?0:(int)((long)Math.clamp(b.progress,0,b.total)*w/b.total);
+                int progress=b.totalSteps()<=0?0:(int)((long)Math.clamp(b.completedSteps(),0,b.totalSteps())*w/b.totalSteps());
                 g.fill(x-w/2,z+5,x-w/2+progress,z+7,0xFFDAB05F);
             }
         }
@@ -315,7 +315,7 @@ public final class SettlementScreen extends Screen {
             g.fill(x1,z1,x2,z2,valid?0x665D893C:0x66AA4234);
             border(g,x1,z1,x2,z2,valid?0xFF45662A:0xFF9F3326);
             String problem=placementProblem(dx,dz,halfW,halfD);
-            hover=problem.isEmpty()?tr("placeBuilding"):tr("placement."+problem);
+            hover=problem.isEmpty()?tr("prepareBuilding"):tr("placement."+problem);
         }
         // Compass and small scale line are anchored to the parchment, not the world.
         int compassX=mapRight-19,compassY=mapTop+20;
@@ -383,13 +383,19 @@ public final class SettlementScreen extends Screen {
         if(terrain==null)return "unknown";
         int center=terrain.index(s.x+dx,s.z+dz);
         if(terrain.kind(center)==TerrainMap.UNKNOWN)return "unknown";
-        int y=terrain.heights()[center];
+        var heights=new java.util.ArrayList<Integer>();
         for(int z=dz-halfD;z<=dz+halfD;z++)for(int x=dx-halfW;x<=dx+halfW;x++) {
             int cell=terrain.index(s.x+x,s.z+z),kind=terrain.kind(cell);
             if(kind==TerrainMap.UNKNOWN)return "unknown";
             if(kind==TerrainMap.WATER||kind==TerrainMap.LAVA)return "water";
-            if(terrain.heights()[cell]!=y)return "uneven";
-            if(!terrain.clear(cell))return "blocked";
+            if(kind==TerrainMap.STRUCTURE)return "blocked";
+            if(kind!=TerrainMap.FOREST)heights.add((int)terrain.heights()[cell]);
+            if(!terrain.clear(cell)&&kind!=TerrainMap.FOREST)return "blocked";
+        }
+        heights.sort(Integer::compareTo);
+        if(!heights.isEmpty()) {
+            int y=heights.get(heights.size()/2);
+            for(int h:heights)if(h-y>space.magnitoshka.settlements.SitePreparation.MAX_CUT||y-h>space.magnitoshka.settlements.SitePreparation.MAX_FILL)return "uneven";
         }
         return "";
     }
@@ -398,7 +404,7 @@ public final class SettlementScreen extends Screen {
     }
     private Component buildingState(Building b) {
         if(b.complete)return tr("buildingReady");
-        int percent=b.total<=0?0:(int)((long)Math.clamp(b.progress,0,b.total)*100/b.total);
+        int percent=b.totalSteps()<=0?0:(int)((long)Math.clamp(b.completedSteps(),0,b.totalSteps())*100/b.totalSteps());
         return tr("buildingProgress",percent);
     }
     private void drawOverview(GuiGraphicsExtractor g) {
@@ -438,7 +444,7 @@ public final class SettlementScreen extends Screen {
             text(g,buildingState(b),x,117,w,LIGHT);
             text(g,tr("status."+(b.status==null?"idle":b.status)),x,132,w,0xFFC4AA7D);
             text(g,Component.literal(b.x+", "+b.z),x,147,w,LIGHT);
-            int progress=b.total<=0?0:(int)((long)Math.clamp(b.progress,0,b.total)*(w-2)/b.total);
+            int progress=b.totalSteps()<=0?0:(int)((long)Math.clamp(b.completedSteps(),0,b.totalSteps())*(w-2)/b.totalSteps());
             g.fill(x,161,x+w,167,0xFF211B14);g.fill(x+1,162,x+1+progress,166,0xFFC8A05D);
         } else {
             int rows=catalogRows(),pages=(TYPES.length+rows-1)/rows;

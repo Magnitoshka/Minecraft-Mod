@@ -57,9 +57,9 @@
   "message.smartsettlements.build_queue_full": "Construction queue is full (16 sites).",
   "message.smartsettlements.build_collision": "Too close to another building or construction site.",
   "message.smartsettlements.build_unloaded": "Visit this area first so its chunks are loaded.",
-  "message.smartsettlements.build_site": "Need a flat, supported, clear site with five blocks of headroom.",
-  "message.smartsettlements.build_path": "No walkable path from the hall to the building entrance.",
-  "message.smartsettlements.build_materials": "Not enough logs or cobblestone in the warehouse.",
+  "message.smartsettlements.build_site": "Cannot prepare the site: maximum cut 4, fill 3 blocks. Structures, water and protected blocks must remain clear.",
+  "message.smartsettlements.build_path": "No path from the town hall, or the future entrance has a step higher than 1 block.",
+  "message.smartsettlements.build_materials": "Not enough logs or cobblestone. Filling requires 1 additional cobblestone per block.",
   "ui.smartsettlements.construction": "Build",
   "ui.smartsettlements.ledgerSummary": "Ledger",
   "ui.smartsettlements.ledgerEconomy": "Treasury",
@@ -102,7 +102,7 @@
   "ui.smartsettlements.placement.collision": "Another building or site is too close.",
   "ui.smartsettlements.placement.unknown": "Terrain is unknown here. Wait for survey or visit the area.",
   "ui.smartsettlements.placement.water": "The site includes water or lava.",
-  "ui.smartsettlements.placement.uneven": "The site is uneven. Prepare a flat foundation.",
+  "ui.smartsettlements.placement.uneven": "Too steep: cut up to 4 blocks, fill up to 3.",
   "ui.smartsettlements.placement.blocked": "Clear this site before building.",
   "activity.smartsettlements.building": "Building %s",
   "activity.smartsettlements.walking_builder": "Walking to construction site",
@@ -143,5 +143,9 @@
   "ui.smartsettlements.terrain.snow": "Snow",
   "ui.smartsettlements.terrain.forest": "Trees",
   "ui.smartsettlements.terrain.structure": "Structure",
-  "ui.smartsettlements.terrain.lava": "Lava"
+  "ui.smartsettlements.terrain.lava": "Lava",
+  "ui.smartsettlements.status.leveling": "Leveling the site",
+  "ui.smartsettlements.prepareBuilding": "Place: the builder prepares the site. Filling costs 1 cobblestone per block.",
+  "ui.smartsettlements.foundationCost": "Filling holes costs 1 additional warehouse cobblestone per block.",
+  "action.smartsettlements.preparation_started": "The builder started preparing the site: %s."
 }
