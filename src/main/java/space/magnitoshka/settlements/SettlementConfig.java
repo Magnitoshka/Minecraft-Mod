@@ -63,6 +63,10 @@ public final class SettlementConfig {
             MINE_WEIGHTS.put(tier,values);
         }
     }
+    public static final ForgeConfigSpec.BooleanValue AUTO_REPAIR=B.define("autoRepairBuildings",true);
+    public static final ForgeConfigSpec.IntValue REPAIR_SCAN=integer("buildingInspectionBlocksPerTick",128,1,4096);
+    public static final ForgeConfigSpec.IntValue REPAIR_WOOD=integer("repairLogsPerUnit",1,1,64);
+    public static final ForgeConfigSpec.IntValue REPAIR_STONE=integer("repairCobblestonePerUnit",1,1,64);
     public static final ForgeConfigSpec SPEC = B.build();
     private static ForgeConfigSpec.IntValue integer(String key, int value, int min, int max) {
         return B.defineInRange(key, value, min, max);

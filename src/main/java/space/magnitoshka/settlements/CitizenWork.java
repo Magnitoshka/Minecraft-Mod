@@ -64,8 +64,9 @@ public final class CitizenWork {
             if(r.builderInventory.size()>0&&!returnToHall(citizen,s,previous,r)) {r.workStatus="fetching";return;}
             BuilderAssignments.unload(s,r);data.setDirty();
         }
-        var job=BuilderAssignments.claim(s,r);
+        var job=BuilderAssignments.claim(s,r,level.getGameTime());
         if(job==null) {r.workStatus="idle";return;}
+        if(job.repairing) {repair(citizen,level,data,s,r,job);return;}
         BuilderLogistics.initialize(job);data.setDirty();
         if(!r.supplyReady||r.fetching) {supplies(citizen,level,data,s,r,job);return;}
         var type=BuildingType.byId(job.type);
@@ -74,6 +75,8 @@ public final class CitizenWork {
         var entrance=job.hasStand?new BlockPos(job.standX,job.standY,job.standZ):origin.offset(0,0,-type.halfDepth-1);
         if(job.columnCursor<job.columns.size()) {prepareColumns(citizen,level,data,s,r,job);return;}
         if(!(job.access.isEmpty()?approach(citizen,entrance,r,4):approachAccess(citizen,s,job,job.access.size()-1,r))) {if(r.workStatus.equals("blocked"))block(level,data,s,r,job);return;}
+        // A loose3–4 block proximity could accept a position inside a future wall.
+        if(!approach(citizen,entrance,r,.8))return;
         if(job.prepared<job.preparation.size()) {prepare(citizen,level,data,s,r,job);return;}
         if(!r.supplyStage.equals("base")) {r.fetching=true;supplies(citizen,level,data,s,r,job);return;}
         var pieces=BuildingTemplates.pieces(job);
@@ -81,9 +84,12 @@ public final class CitizenWork {
         boolean changed=false;
         for(int i=0;i<count&&job.progress<pieces.size();i++) {
             var piece=pieces.get(job.progress);var at=piece.at(origin);
+            if(!Construction.canChange(level,at,s.owner)) {block(level,data,s,r,job);break;}
+            if(!BuildingTemplates.matches(level.getBlockState(at),piece.state())&&!ConstructionSafety.permits(level,at,piece.state())) {
+                ConstructionSafety.yield(citizen,level,job,r,at,piece.state());break;
+            }
             BuilderLogistics.stageBase(r,job);
             if(!BuilderLogistics.hasBase(r,job)) {r.fetching=true;supplies(citizen,level,data,s,r,job);break;}
-            if(!Construction.canChange(level,at,s.owner)) {block(level,data,s,r,job);break;}
             var current=level.getBlockState(at);
             // Resume safely if the previous write was saved before its progress cursor.
             if(!BuildingTemplates.matches(current,piece.state())) {
@@ -119,6 +125,67 @@ public final class CitizenWork {
         }
         if(changed) {citizen.swingForAttack(InteractionHand.MAIN_HAND);data.setDirty();}
     }
+    private void repair(CitizenEntity citizen,ServerLevel level,SettlementData data,Settlement s,Resident r,Building job) {
+        data.setDirty();
+        int budget=Math.max(1,(int)Math.floor(SettlementConfig.BUILD_RATE.get()*r.workEfficiency()));
+        while(budget-->0&&!job.repairUnits.isEmpty()) {
+            int index=job.repairUnits.getFirst();var unit=BuildingRepairs.unit(job,index);var origin=new BlockPos(job.x,job.y,job.z);
+            if(unit.stream().anyMatch(piece->!level.hasChunkAt(piece.at(origin)))) {pauseRepair(level,r,job,"repair_blocked");return;}
+            if(!BuildingRepairs.needsRepair(level,job,unit)) {
+                // Already restored or deliberately replaced; never overwrite somebody's new interior.
+                job.repairUnits.removeFirst();job.repairCredit.remove(index);continue;
+            }
+            int price=BuildingRepairs.cost(unit);
+            if(BuildingRepairs.staged(job,index)<price&&(!r.supplyReady||r.fetching)) {repairSupplies(citizen,level,data,s,r,job,index);return;}
+            var entrance=ConstructionSafety.stand(job);
+            if(!job.access.isEmpty()&&!approachAccess(citizen,s,job,job.access.size()-1,r))return;
+            if(!approach(citizen,entrance,r,.8))return;
+            for(var piece:unit) {
+                var at=piece.at(origin);
+                if(BuildingTemplates.matches(level.getBlockState(at),piece.state()))continue;
+                boolean neighborsLoaded=true;
+                for(var direction:net.minecraft.core.Direction.values())if(!level.hasChunkAt(at.relative(direction))) {neighborsLoaded=false;break;}
+                if(!neighborsLoaded||!Construction.canChange(level,at,s.owner)||!piece.state().canSurvive(level,at)) {pauseRepair(level,r,job,"repair_blocked");return;}
+                if(!ConstructionSafety.permits(level,at,piece.state())) {ConstructionSafety.yield(citizen,level,job,r,at,piece.state());return;}
+            }
+            BuildingRepairs.stage(r,job,index,unit);
+            if(BuildingRepairs.staged(job,index)<price) {r.fetching=true;repairSupplies(citizen,level,data,s,r,job,index);return;}
+            // Credit persists until the paired unit is verified, so partial bed writes never charge twice.
+            for(var piece:unit) {
+                var at=piece.at(origin);
+                if(!BuildingTemplates.matches(level.getBlockState(at),piece.state())
+                    &&!level.setBlock(at,piece.state(),piece.state().getBlock() instanceof BedBlock?2:3)) {
+                    r.workStatus="repair_blocked";job.status="repair_blocked";return;
+                }
+            }
+            if(unit.stream().anyMatch(piece->!BuildingTemplates.matches(level.getBlockState(piece.at(origin)),piece.state()))) {
+                r.workStatus="repair_blocked";job.status="repair_blocked";return;
+            }
+            job.repairUnits.removeFirst();job.repairCredit.remove(index);job.status="repairing";r.workStatus="repairing";
+            citizen.swingForAttack(InteractionHand.MAIN_HAND);Construction.award(r,SettlementConfig.BUILDER_XP.get());
+        }
+        if(job.repairUnits.isEmpty()) {
+            BuildingRepairs.finish(job,r);
+            SettlementNetwork.ownerNotice(level.getServer(),s,true,"action.smartsettlements.repair_complete",
+                net.minecraft.network.chat.Component.translatable("building.smartsettlements."+job.type));
+        }
+    }
+    private void pauseRepair(ServerLevel level,Resident r,Building job,String status) {
+        if(job.repairUnits.size()>1)job.repairUnits.add(job.repairUnits.removeFirst());
+        job.status=status;r.workStatus=status;job.workRetryAt=level.getGameTime()+100;
+        job.assignedBuilder="";r.taskBuilding="";r.fetching=false;r.supplyReady=false;
+    }
+    private void repairSupplies(CitizenEntity citizen,ServerLevel level,SettlementData data,Settlement s,Resident r,Building job,int index) {
+        r.fetching=true;r.workStatus="fetching";job.status="repair_fetching";
+        if(!returnToHall(citizen,s,job,r))return;
+        // Stock is virtual: a missing hall barrel must not prevent fetching its own repair materials.
+        int loaded=BuildingRepairs.load(s,r,job,index);data.setDirty();
+        if(loaded==0) {
+            pauseRepair(level,r,job,"repair_materials");
+            return;
+        }
+        r.fetching=false;r.supplyReady=true;r.supplyStage="repair";r.workStatus="loading";job.status="repair_fetching";
+    }
     private boolean prepareColumns(CitizenEntity citizen,ServerLevel level,SettlementData data,Settlement s,Resident r,Building job) {
         int budget=Math.max(1,(int)Math.floor(SettlementConfig.BUILD_RATE.get()*r.workEfficiency()));
         while(budget>0&&job.columnCursor<job.columns.size()) {
@@ -145,6 +212,8 @@ public final class CitizenWork {
                         &&original;
                 if(!safe||state.getDestroySpeed(level,at)<0) {blockAt(level,data,s,r,job,at);return false;}
                 if(fill&&!BuilderLogistics.hasFill(r,job)) {r.fetching=true;supplies(citizen,level,data,s,r,job);return false;}
+                var targetState=fill?Blocks.COBBLESTONE.defaultBlockState():Blocks.AIR.defaultBlockState();
+                if(!ConstructionSafety.permits(level,at,targetState)) {ConstructionSafety.yield(citizen,level,job,r,at,targetState);return false;}
                 // Direct replacement prevents ice turning into water, unlike breaking the ice block.
                 if(!level.setBlock(at,fill?Blocks.COBBLESTONE.defaultBlockState():Blocks.AIR.defaultBlockState(),3)) {blockAt(level,data,s,r,job,at);return false;}
                 if(fill)BuilderLogistics.spendFill(r,job);
@@ -164,10 +233,7 @@ public final class CitizenWork {
     private boolean supplies(CitizenEntity citizen,ServerLevel level,SettlementData data,Settlement s,Resident r,Building job) {
         r.fetching=true;
         if(!returnToHall(citizen,s,job,r)) {r.workStatus="fetching";job.status="fetching";return false;}
-        var barrel=new BlockPos(s.x+3,s.y,s.z);
-        if(!level.getBlockState(barrel).is(Blocks.BARREL)) {
-            r.workStatus="materials";job.status="materials";data.setDirty();return false;
-        }
+        // The account is virtual; the collection point remains usable while its barrel awaits repair.
         boolean foundation=BuilderLogistics.hasFoundationWork(job);
         int loaded=BuilderLogistics.load(s,r,job,foundation);
         r.supplyStage=foundation?"foundation":"base";
@@ -175,6 +241,8 @@ public final class CitizenWork {
             boolean notify=!job.status.equals("materials");r.workStatus="materials";job.status="materials";data.setDirty();
             if(notify)SettlementNetwork.ownerNotice(level.getServer(),s,false,"action.smartsettlements.builder_materials",
                 net.minecraft.network.chat.Component.translatable("building.smartsettlements."+job.type));
+            BuilderAssignments.unload(s,r);job.assignedBuilder="";job.workRetryAt=level.getGameTime()+100;
+            r.taskBuilding="";r.fetching=false;
             return false;
         }
         r.supplyReady=true;r.fetching=false;r.workStatus="loading";job.status="loading";data.setDirty();
@@ -246,6 +314,8 @@ public final class CitizenWork {
                 boolean safe=edit.fill?state.canBeReplaced()&&level.getBlockState(at.below()).isFaceSturdy(level,at.below(),net.minecraft.core.Direction.UP):SitePreparation.removable(state)
                     &&BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString().equals(edit.expected);
                 if(edit.fill&&!BuilderLogistics.hasFill(r,job)) {r.fetching=true;supplies(citizen,level,data,s,r,job);return;}
+                var targetState=edit.fill?Blocks.COBBLESTONE.defaultBlockState():Blocks.AIR.defaultBlockState();
+                if(!ConstructionSafety.permits(level,at,targetState)) {ConstructionSafety.yield(citizen,level,job,r,at,targetState);return;}
                 if(!safe||!level.setBlock(at,edit.fill?Blocks.COBBLESTONE.defaultBlockState():Blocks.AIR.defaultBlockState(),3)) {
                     block(level,data,s,r,job);return;
                 }

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.1+26.3 — 2026-10-30
+
+Prevent construction, upgrade and terrain writes from intersecting living entities or removing their footing; require a precise exterior work position. Add budgeted loaded-only automatic repairs for completed buildings and migrated town halls, paired beds, physical repair cargo and persistent repair credit. Preserve original contracts, tiers, inventories and sapling gifts; skip player replacements/crops. Missing hall barrels no longer block virtual stock collection. Material/protection waits yield to other work. Repair UI/config/localization and protocol8. Death-loot-at-location remains separately queued. Static review and compilation only; no game/tests.
+
 ## 0.7.0+26.3 — 2026-10-30
 
 Persistent building upgrades and town-hall progression with prerequisites and settlement unlocks. Added all specified building kinds with three template tiers, server-configured immutable contract prices, level-based beds/workplaces/storage/speed/tools and mine tables. Preserved legacy houses, paid jobs and unchanged containers. High configured material prices are delivered through multiple trips into persisted per-step staging. Map development page, upgrade buttons, authoritative prices and RU/EN text; protocol7. Fixed-size fields and later-stage professions/combat/trade remain future work.

@@ -37,7 +37,10 @@ public final class SettlementData extends SavedData {
     private SettlementData(WorldState state) {
         if(state==null)throw new IllegalArgumentException("Empty settlement save");
         this.state=state;
-        for(var s:state.settlements.values())if(s.radius<=0) {s.radius=SettlementConfig.RADIUS.get();setDirty();}
+        for(var s:state.settlements.values()) {
+            if(s.radius<=0) {s.radius=SettlementConfig.RADIUS.get();setDirty();}
+            if(BuildingRepairs.ensureHall(s))setDirty();
+        }
     }
     public static SettlementData get(MinecraftServer server) {
         var storage=server.overworld().getDataStorage();

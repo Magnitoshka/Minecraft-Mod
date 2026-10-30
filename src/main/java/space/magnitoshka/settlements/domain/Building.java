@@ -13,6 +13,11 @@ public final class Building {
     /** Price agreed when queued; live configuration changes never alter an active contract. */
     public int priceWood=-1,priceStone=-1;
     public int stagedWood,stagedStone;
+    public boolean repairing;
+    public List<Integer> repairUnits=new ArrayList<>();
+    public int repairTotal;
+    public long workRetryAt;
+    public java.util.Map<Integer,Integer> repairCredit=new java.util.HashMap<>();
     public int workplaces() {return complete?Math.clamp(level,1,3):0;}
     public List<SiteEdit> preparation=new ArrayList<>();
     public List<SiteColumn> columns=new ArrayList<>();

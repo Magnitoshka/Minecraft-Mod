@@ -22,6 +22,7 @@ public final class HutStorage {
         var at=position(hut);if(!level.hasChunkAt(at))return;
         if(get(level,hut)==null) {
             if(!SitePreparation.cover(level.getBlockState(at))||!Construction.canChange(level,at,s.owner))return;
+            if(!ConstructionSafety.permits(level,at,Blocks.BARREL.defaultBlockState()))return;
             if(!level.setBlock(at,Blocks.BARREL.defaultBlockState(),3))return;
         }
         var inventory=get(level,hut);if(inventory==null)return;

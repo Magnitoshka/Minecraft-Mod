@@ -231,10 +231,10 @@ public final class SettlementScreen extends Screen {
         int x=panelX+8,w=panelW-16;
         if(buildingDetails) {
             var building=buildings().stream().filter(b->b.id.equals(selectedBuilding)).findFirst().orElse(null);
-            if(building!=null&&building.complete&&building.level<3) {
+            if(building!=null&&building.complete&&!building.repairing&&building.level<3) {
                 var cost=cost(building.type,building.level+1);
                 button(x,175,w,tr("upgradeBuilding",building.level+1),()->action("upgrade",building.id,0))
-                    .setTooltip(Tooltip.create(tr("buildingCost",cost[0],cost[1]).copy().append("\n").append(tr("upgradeNeedsTier",building.level+1))));
+                    .setTooltip(Tooltip.create(tr("buildingCost",cost[0],cost[1]).copy().append("\n").append(building.type.equals("town_hall")?hallRequirements():tr("upgradeNeedsTier",building.level+1))));
             }
             button(x,198,w,tr("buildingCatalog"),()->{buildingDetails=false;selectedBuilding="";rebuildWidgets();});
             return;
@@ -437,6 +437,7 @@ public final class SettlementScreen extends Screen {
         return switch(profession) {case "builder"->0xFFE4B34F;case "lumberjack"->0xFF518651;case "miner"->0xFF858A9A;case "farmer"->0xFFCC8550;case "courier"->0xFF6DA5B7;default->0xFFC2B79E;};
     }
     private Component buildingState(Building b) {
+        if(b.repairing)return tr("repairProgress",Math.max(0,b.repairTotal-b.repairUnits.size()),b.repairTotal);
         if(b.complete)return tr("buildingReady");
         if(b.upgradeFromLevel>0)return tr("upgradingTo",b.targetLevel,b.totalSteps()<=0?0:(int)((long)b.completedSteps()*100/b.totalSteps()));
         int percent=b.totalSteps()<=0?0:(int)((long)Math.clamp(b.completedSteps(),0,b.totalSteps())*100/b.totalSteps());

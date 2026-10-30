@@ -45,7 +45,7 @@ public final class Progression {
             }
         } else job=s.buildings.stream().filter(b->b.id.equals(id)).findFirst().orElse(null);
         if(job==null)return reject("missing");
-        if(!job.complete)return reject("busy");
+        if(!job.complete||job.repairing)return reject("busy");
         if(job.level>=3)return reject("max");
         var type=BuildingType.byId(job.type);if(type==null)return reject("missing");
         if(type==BuildingType.TOWN_HALL&&!eligible(s))return new Construction.Result("requirements",requirementsText(s));
@@ -77,7 +77,7 @@ public final class Progression {
         job.upgradeFromLevel=job.level;job.upgradeFromVersion=job.templateVersion;
         job.templateVersion=1;job.targetLevel=next;job.total=target.size();job.progress=0;job.materialProgress=0;
         job.priceWood=wood;job.priceStone=stone;job.stagedWood=job.stagedStone=0;job.logisticsInitialized=true;
-        job.complete=false;job.started=false;job.status="waiting_builder";job.assignedBuilder="";
+        job.workRetryAt=0;job.complete=false;job.started=false;job.status="waiting_builder";job.assignedBuilder="";
         job.preparation.clear();job.columns.clear();job.columnCursor=0;job.prepared=0;job.preparationTotal=0;
         job.foundationRemaining=0;job.prepaidFill=0;job.foundationPrepaid=false;
         Construction.reserve(s,job,wood,stone);

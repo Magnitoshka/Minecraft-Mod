@@ -222,5 +222,13 @@
   "building.smartsettlements.church": "Церковь",
   "activity.smartsettlements.target.church": "Церковь",
   "building.smartsettlements.town_hall": "Главное здание",
-  "activity.smartsettlements.target.town_hall": "Главное здание"
+  "activity.smartsettlements.target.town_hall": "Главное здание",
+  "ui.smartsettlements.status.safety_wait": "Ждёт безопасного места / отходит",
+  "ui.smartsettlements.status.needs_repair": "Требуется ремонт",
+  "ui.smartsettlements.status.repairing": "Восстанавливает здание",
+  "ui.smartsettlements.status.repair_fetching": "Доставка материалов для ремонта",
+  "ui.smartsettlements.status.repair_materials": "Для ремонта нужны брёвна / булыжник",
+  "ui.smartsettlements.status.repair_blocked": "Ремонт: нет доступа, опоры или разрешения",
+  "ui.smartsettlements.repairProgress": "Ремонт: %s / %s элементов",
+  "action.smartsettlements.repair_complete": "Здание проверено, повреждённых элементов больше нет: %s."
 }

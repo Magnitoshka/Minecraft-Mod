@@ -70,7 +70,7 @@ public final class ServerSettlements {
         for(int x=-4;x<=4;x++)for(int z=-3;z<=3;z++)for(int y=0;y<=5;y++) {
             var at=pos.offset(x,y,z);if(!level.getBlockState(at).isAir())level.setBlock(at,Blocks.AIR.defaultBlockState(),3);
         }
-        buildHall(level,pos);s.roofBannerCleaned=true;
+        buildHall(level,pos);BuildingRepairs.ensureHall(s);s.roofBannerCleaned=true;
         for (var r:s.residents) spawn(level,s,r);
         data.setDirty();
         SettlementNetwork.open(player,s.id,null);
@@ -123,6 +123,7 @@ public final class ServerSettlements {
     }
     public static void tick(TickEvent.ServerTickEvent.Post event) {
         SettlementNetwork.tickTerrain(event.server());
+        BuildingRepairs.tick(event.server());
         if (++ticks%20!=0) return;
         var server=event.server(); var data=SettlementData.get(server);
         Map<UUID,Integer> loaded = new HashMap<>();

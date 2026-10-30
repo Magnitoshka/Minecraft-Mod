@@ -222,5 +222,13 @@
   "building.smartsettlements.church": "Church",
   "activity.smartsettlements.target.church": "Church",
   "building.smartsettlements.town_hall": "Town hall",
-  "activity.smartsettlements.target.town_hall": "Town hall"
+  "activity.smartsettlements.target.town_hall": "Town hall",
+  "ui.smartsettlements.status.safety_wait": "Waiting for clearance / moving aside",
+  "ui.smartsettlements.status.needs_repair": "Repairs needed",
+  "ui.smartsettlements.status.repairing": "Repairing building",
+  "ui.smartsettlements.status.repair_fetching": "Fetching repair materials",
+  "ui.smartsettlements.status.repair_materials": "Repair needs logs / cobblestone",
+  "ui.smartsettlements.status.repair_blocked": "Repair blocked: access, support or protection",
+  "ui.smartsettlements.repairProgress": "Repairs: %s / %s units",
+  "action.smartsettlements.repair_complete": "Building checked; no damaged units remain: %s."
 }

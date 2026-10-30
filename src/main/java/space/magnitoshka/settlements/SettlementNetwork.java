@@ -10,13 +10,13 @@ import net.minecraftforge.network.PacketDistributor;
 import space.magnitoshka.settlements.domain.Settlement;
 
 public final class SettlementNetwork {
-    private static final SimpleChannel CHANNEL = ChannelBuilder.named(Settlements.MODID + ":main").networkProtocolVersion(7).simpleChannel();
+    private static final SimpleChannel CHANNEL = ChannelBuilder.named(Settlements.MODID + ":main").networkProtocolVersion(8).simpleChannel();
     // Detailed edit plans belong to the save, not the once-per-second UI snapshot.
     private static final com.google.gson.Gson SNAPSHOT_JSON=SettlementData.GSON.newBuilder()
         .addSerializationExclusionStrategy(new com.google.gson.ExclusionStrategy() {
             public boolean shouldSkipField(com.google.gson.FieldAttributes field) {
                 return field.getDeclaringClass()==Settlement.class&&field.getName().equals("departedCargo")
-                    ||field.getDeclaringClass()==space.magnitoshka.settlements.domain.Building.class&&java.util.Set.of("preparation","columns","access","reserved").contains(field.getName());
+                    ||field.getDeclaringClass()==space.magnitoshka.settlements.domain.Building.class&&java.util.Set.of("preparation","columns","access","reserved","repairCredit").contains(field.getName());
             }
             public boolean shouldSkipClass(Class<?> type) {return false;}
         }).create();
