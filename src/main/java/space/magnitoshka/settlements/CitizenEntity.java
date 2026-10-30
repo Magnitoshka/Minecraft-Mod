@@ -26,6 +26,8 @@ public final class CitizenEntity extends PathfinderMob {
     private final CitizenWork work = new CitizenWork();
     private boolean nightRoutine;
     private final CitizenTraffic traffic=new CitizenTraffic();
+    private final CitizenNavigation routes=new CitizenNavigation(this);
+    public CitizenNavigation routes() {return routes;}
     private boolean talking;
     public boolean isTalking() {return talking;}
     @Override public void push(net.minecraft.world.entity.Entity entity) {
@@ -55,7 +57,8 @@ public final class CitizenEntity extends PathfinderMob {
         super.tick();
         if (!(level() instanceof ServerLevel server) || settlementId==null) return;
         talking=SettlementNetwork.talking(this);
-        if(talking) {getNavigation().stop();setDeltaMovement(0,getDeltaMovement().y,0);if(isSleeping())stopSleeping();}
+        if(talking) {routes.cancel();setDeltaMovement(0,getDeltaMovement().y,0);if(isSleeping())stopSleeping();}
+        routes.tick();
         boolean yielding=!talking&&traffic.tick(this,server);
         if(tickCount%20!=0)return;
         var data=SettlementData.get(server.getServer());
@@ -77,20 +80,20 @@ public final class CitizenEntity extends PathfinderMob {
         if(r.mood!=mood) { r.mood=mood; data.setDirty(); }
         long time=Math.floorMod(server.getOverworldClockTime(),24000);
         boolean night=time>=12500&&time<23500;
-        if(night!=nightRoutine) {getNavigation().stop();nightRoutine=night;}
+        if(night!=nightRoutine) {routes.cancel();nightRoutine=night;}
         if(night) {
             r.workStatus="resting";
-            if(!hasBed) {if(isSleeping())stopSleeping();getNavigation().stop();updateActivity(s,r);return;}
+            if(!hasBed) {if(isSleeping())stopSleeping();routes.cancel();updateActivity(s,r);return;}
             if(!isSleeping()) {
-                if(distanceToSqr(bed.getX()+.5,bed.getY()+.5,bed.getZ()+.5)<4) {getNavigation().stop();startSleeping(bed);}
-                else if(getNavigation().isDone()&&NavigationBudget.take(server.getServer()))getNavigation().moveTo(bed.getX()+.5,bed.getY(),bed.getZ()+.5,.8);
+                if(distanceToSqr(bed.getX()+.5,bed.getY()+.5,bed.getZ()+.5)<4) {routes.cancel();startSleeping(bed);}
+                else if(getNavigation().isDone())routes.start(bed,1,.8,false);
             }
         } else {
-            if(isSleeping()) {stopSleeping();getNavigation().stop();}
+            if(isSleeping()) {stopSleeping();routes.cancel();}
             work.tick(this,server,data,s,r);
-            if(r.profession.equals("unemployed")&&getNavigation().isDone()&&tickCount%100==0&&NavigationBudget.take(server.getServer())) {
+            if(r.profession.equals("unemployed")&&getNavigation().isDone()&&tickCount%100==0) {
                 int dx=getRandom().nextInt(9)-4,dz=getRandom().nextInt(9)-4;
-                getNavigation().moveTo(s.x+dx+.5,s.y,s.z+dz+.5,.6);
+                routes.start(new BlockPos(s.x+dx,s.y,s.z+dz),1,.6,false);
             }
         }
         updateActivity(s,r);
@@ -112,7 +115,7 @@ public final class CitizenEntity extends PathfinderMob {
     @Override protected InteractionResult mobInteract(Player player, InteractionHand hand) {
         if (player instanceof ServerPlayer sp && settlementId!=null) {
             var s=SettlementData.get(sp.level().getServer()).state.settlements.get(settlementId);
-            if (s!=null && s.owner.equals(sp.getUUID())) {getNavigation().stop();SettlementNetwork.open(sp,s.id,getUUID());}
+            if (s!=null && s.owner.equals(sp.getUUID())) {routes.cancel();SettlementNetwork.open(sp,s.id,getUUID());}
             else sp.sendSystemMessage(Component.translatable("message.smartsettlements.owner"));
         }
         return InteractionResult.SUCCESS;

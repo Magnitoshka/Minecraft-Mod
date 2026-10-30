@@ -19,7 +19,6 @@ public final class CitizenTraffic {
             var delta=other.position().subtract(citizen.position()).multiply(1,0,1);
             if(delta.lengthSqr()>2.25||delta.dot(heading)<=.1)continue;
             if(!other.isTalking()&&citizen.getUUID().compareTo(other.getUUID())<0)continue;
-            if(!NavigationBudget.take(level.getServer()))return false;
             // The same side is tried first, preventing two residents from mirroring each other.
             Vec3 side=new Vec3(-heading.z,0,heading.x);
             for(var offset:new Vec3[]{side.scale(1.5),side.scale(-1.5),heading.scale(-2.5),heading.scale(-1)}) {
@@ -27,12 +26,13 @@ public final class CitizenTraffic {
                 if(!level.hasChunkAt(at)||!SitePreparation.stable(level,at.below()))continue;
                 var box=citizen.getBoundingBox().move(at.getX()+.5-citizen.getX(),at.getY()-citizen.getY(),at.getZ()+.5-citizen.getZ());
                 if(!level.noCollision(citizen,box))continue;
-                var path=citizen.getNavigation().createPath(at,0);
-                if(path==null||!path.canReach())continue;
-                citizen.getNavigation().moveTo(path,.85);until=citizen.tickCount+30;cooldown=until+30;return true;
+                var route=citizen.routes().detour(at,0,.85);
+                if(route==CitizenNavigation.Step.WAITING)return false;
+                if(route==CitizenNavigation.Step.BLOCKED)continue;
+                until=citizen.tickCount+30;cooldown=until+30;return true;
             }
             // No safe pocket: wait briefly, then retry after the other resident moves.
-            citizen.getNavigation().stop();until=citizen.tickCount+15;cooldown=until;return true;
+            citizen.routes().cancel();until=citizen.tickCount+15;cooldown=until;return true;
         }
         return false;
     }

@@ -230,5 +230,6 @@
   "ui.smartsettlements.status.repair_materials": "Repair needs logs / cobblestone",
   "ui.smartsettlements.status.repair_blocked": "Repair blocked: access, support or protection",
   "ui.smartsettlements.repairProgress": "Repairs: %s / %s units",
-  "action.smartsettlements.repair_complete": "Building checked; no damaged units remain: %s."
+  "action.smartsettlements.repair_complete": "Building checked; no damaged units remain: %s.",
+  "ui.smartsettlements.status.waiting_path": "Waiting to recalculate route"
 }

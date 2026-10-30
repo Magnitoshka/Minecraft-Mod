@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.2+26.3 — 2026-10-30
+
+Unify citizen movement, discard completed paths before replanning, reconcile exact work arrival with path reach tolerance, and align short supported clear segments using normal movement. Add a configurable progress watchdog (60 ticks by default), UUID-spread retries and shared navigation budgeting. Mandatory goals supersede old pending paths; optional detours preserve the original intent on failure. Account for full snow collision height and cancel recovery during conversation/sleep/abandoned work. Static review/build only, no gameplay simulation. Death-location loot remains queued.
+
 ## 0.7.1+26.3 — 2026-10-30
 
 Prevent construction, upgrade and terrain writes from intersecting living entities or removing their footing; require a precise exterior work position. Add budgeted loaded-only automatic repairs for completed buildings and migrated town halls, paired beds, physical repair cargo and persistent repair credit. Preserve original contracts, tiers, inventories and sapling gifts; skip player replacements/crops. Missing hall barrels no longer block virtual stock collection. Material/protection waits yield to other work. Repair UI/config/localization and protocol8. Death-loot-at-location remains separately queued. Static review and compilation only; no game/tests.

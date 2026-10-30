@@ -67,6 +67,7 @@ public final class SettlementConfig {
     public static final ForgeConfigSpec.IntValue REPAIR_SCAN=integer("buildingInspectionBlocksPerTick",128,1,4096);
     public static final ForgeConfigSpec.IntValue REPAIR_WOOD=integer("repairLogsPerUnit",1,1,64);
     public static final ForgeConfigSpec.IntValue REPAIR_STONE=integer("repairCobblestonePerUnit",1,1,64);
+    public static final ForgeConfigSpec.IntValue REPATH_TICKS=integer("citizenRepathAfterTicks",60,20,1200);
     public static final ForgeConfigSpec SPEC = B.build();
     private static ForgeConfigSpec.IntValue integer(String key, int value, int min, int max) {
         return B.defineInRange(key, value, min, max);

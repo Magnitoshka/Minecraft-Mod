@@ -47,9 +47,8 @@ public final class ConstructionSafety {
             boolean threatened=false;
             for(var part:target.getCollisionShape(level,at).toAabbs())if(part.move(at.getX(),at.getY(),at.getZ()).intersects(box.inflate(.05))) {threatened=true;break;}
             if(threatened)continue;
-            if(!NavigationBudget.take(level.getServer()))return;
-            var path=citizen.getNavigation().createPath(candidate,0);
-            if(path!=null&&path.canReach()) {citizen.getNavigation().moveTo(path,.85);return;}
+            var route=citizen.routes().detour(candidate,0,.85);
+            if(route==CitizenNavigation.Step.WAITING||route==CitizenNavigation.Step.MOVING)return;
         }
     }
     private ConstructionSafety() {}

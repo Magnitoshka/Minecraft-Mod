@@ -29,7 +29,7 @@ public final class CitizenWork {
         int toolTier=r.profession.equals("builder")?s.level:s.buildings.stream().filter(b->b.id.equals(r.workplace)).mapToInt(b->b.level).findFirst().orElse(1);
         if(!r.profession.equals(lastProfession)||lastToolTier!=toolTier) {
             lastToolTier=toolTier;
-            treeLogs.clear();treeBase=null;lastProfession=r.profession;citizen.getNavigation().stop();
+            treeLogs.clear();treeBase=null;lastProfession=r.profession;citizen.routes().cancel();
             var tool=switch(r.profession) {
                 case "builder","lumberjack"->toolTier>=3?Items.DIAMOND_AXE:toolTier==2?Items.IRON_AXE:Items.STONE_AXE;
                 case "miner"->toolTier>=3?Items.DIAMOND_PICKAXE:toolTier==2?Items.IRON_PICKAXE:Items.STONE_PICKAXE;
@@ -49,7 +49,7 @@ public final class CitizenWork {
             }
             r.workStatus=r.builderInventory.size()>0?"full":"delivering";return;
         }
-        if(r.workEfficiency()<=0) {r.workStatus="starving";citizen.getNavigation().stop();return;}
+        if(r.workEfficiency()<=0) {r.workStatus="starving";citizen.routes().cancel();return;}
         switch(r.profession) {
             case "builder" -> build(citizen,level,data,s,r);
             case "lumberjack","miner","farmer" -> produce(citizen,level,data,s,r);
@@ -65,7 +65,7 @@ public final class CitizenWork {
             BuilderAssignments.unload(s,r);data.setDirty();
         }
         var job=BuilderAssignments.claim(s,r,level.getGameTime());
-        if(job==null) {r.workStatus="idle";return;}
+        if(job==null) {citizen.routes().cancel();r.workStatus="idle";return;}
         if(job.repairing) {repair(citizen,level,data,s,r,job);return;}
         BuilderLogistics.initialize(job);data.setDirty();
         if(!r.supplyReady||r.fetching) {supplies(citizen,level,data,s,r,job);return;}
@@ -76,7 +76,7 @@ public final class CitizenWork {
         if(job.columnCursor<job.columns.size()) {prepareColumns(citizen,level,data,s,r,job);return;}
         if(!(job.access.isEmpty()?approach(citizen,entrance,r,4):approachAccess(citizen,s,job,job.access.size()-1,r))) {if(r.workStatus.equals("blocked"))block(level,data,s,r,job);return;}
         // A loose3–4 block proximity could accept a position inside a future wall.
-        if(!approach(citizen,entrance,r,.8))return;
+        if(!approach(citizen,entrance,r,.15))return;
         if(job.prepared<job.preparation.size()) {prepare(citizen,level,data,s,r,job);return;}
         if(!r.supplyStage.equals("base")) {r.fetching=true;supplies(citizen,level,data,s,r,job);return;}
         var pieces=BuildingTemplates.pieces(job);
@@ -139,7 +139,7 @@ public final class CitizenWork {
             if(BuildingRepairs.staged(job,index)<price&&(!r.supplyReady||r.fetching)) {repairSupplies(citizen,level,data,s,r,job,index);return;}
             var entrance=ConstructionSafety.stand(job);
             if(!job.access.isEmpty()&&!approachAccess(citizen,s,job,job.access.size()-1,r))return;
-            if(!approach(citizen,entrance,r,.8))return;
+            if(!approach(citizen,entrance,r,.15))return;
             for(var piece:unit) {
                 var at=piece.at(origin);
                 if(BuildingTemplates.matches(level.getBlockState(at),piece.state()))continue;
@@ -349,7 +349,7 @@ public final class CitizenWork {
     private void produce(CitizenEntity citizen,ServerLevel level,SettlementData data,Settlement s,Resident r) {
         var workplace=s.buildings.stream().filter(b->b.complete&&b.id.equals(r.workplace)).findFirst().orElse(null);
         String required=switch(r.profession){case "lumberjack"->"lumber_hut";case "miner"->"mine";default->"field";};
-        if(workplace==null||!workplace.type.equals(required)) {r.workStatus="no_workplace";return;}
+        if(workplace==null||!workplace.type.equals(required)) {citizen.routes().cancel();r.workStatus="no_workplace";return;}
         if(!r.profession.equals("lumberjack")&&s.stored()>=Construction.capacity(s)) {r.workStatus="full";return;}
         int seconds=switch(r.profession){case "lumberjack"->SettlementConfig.LUMBER_SECONDS.get();case "miner"->SettlementConfig.MINE_SECONDS.get();default->SettlementConfig.FARM_SECONDS.get();};
         var entrance=new BlockPos(workplace.x,workplace.y,workplace.z-BuildingType.byId(workplace.type).halfDepth-1);
@@ -474,7 +474,7 @@ public final class CitizenWork {
             if(drop!=null) {
                 approachSapling(citizen,drop.blockPosition(),r);
                 if(!r.workStatus.equals("blocked"))return;
-                unreachableSaplings.put(drop.getUUID(),citizen.tickCount+200);
+                citizen.routes().cancel();unreachableSaplings.put(drop.getUUID(),citizen.tickCount+200);
                 unreachableSaplings.entrySet().removeIf(entry->entry.getValue()<citizen.tickCount);
             }
             int radius=SettlementConfig.WORK_RADIUS.get(),side=radius*2+1;
@@ -522,10 +522,8 @@ public final class CitizenWork {
     }
     private void approachSapling(CitizenEntity citizen,BlockPos target,Resident r) {
         if(citizen.distanceToSqr(target.getX()+.5,target.getY(),target.getZ()+.5)<=4)return;
-        if(!citizen.getNavigation().isDone()||!NavigationBudget.take(citizen.level().getServer())) {r.workStatus="walking";return;}
-        var path=citizen.getNavigation().createPath(target,1);
-        if(path==null||!path.canReach()) {r.workStatus="blocked";return;}
-        citizen.getNavigation().moveTo(path,.85);r.workStatus="walking";
+        var result=citizen.routes().start(target,1,.85,true);
+        r.workStatus=result==CitizenNavigation.Step.BLOCKED?"blocked":result==CitizenNavigation.Step.WAITING?"waiting_path":"walking";
     }
     private boolean hasLeaves(ServerLevel level,BlockPos base) {
         for(int dy=2;dy<=24;dy+=2)for(int x=-2;x<=2;x++)for(int z=-2;z<=2;z++) {
@@ -592,9 +590,8 @@ public final class CitizenWork {
         if(changed) {citizen.swingForAttack(InteractionHand.MAIN_HAND);data.setDirty();}
     }
     private boolean approach(CitizenEntity citizen,BlockPos target,Resident r,double range) {
-        if(citizen.distanceToSqr(target.getX()+.5,target.getY(),target.getZ()+.5)<=range*range)return true;
-        if(!citizen.getNavigation().isDone() || !NavigationBudget.take(citizen.level().getServer())) {r.workStatus="walking";return false;}
-        boolean moving=citizen.getNavigation().moveTo(target.getX()+.5,target.getY(),target.getZ()+.5,.85);
-        r.workStatus=moving?"walking":"blocked";return false;
+        var result=citizen.routes().approach(target,range,.85);
+        if(result==CitizenNavigation.Step.ARRIVED)return true;
+        r.workStatus=result==CitizenNavigation.Step.BLOCKED?"blocked":result==CitizenNavigation.Step.WAITING?"waiting_path":"walking";return false;
     }
 }
