@@ -56,16 +56,20 @@ public final class ServerSettlements {
         for (int x=-4;x<=4;x++) for (int z=-3;z<=3;z++) {
             BlockPos floor=pos.offset(x,-1,z);
             if (!level.getWorldBorder().isWithinBounds(floor) || !level.mayInteract(player,floor)
-                    || level.getBlockEntity(floor)!=null || !level.getBlockState(floor).isFaceSturdy(level,floor,Direction.UP)) return fail(player,"site");
+                    || level.getBlockEntity(floor)!=null || level.getBlockState(floor).getDestroySpeed(level,floor)<0 || !(level.getBlockState(floor).isFaceSturdy(level,floor,Direction.UP)||level.getBlockState(floor).is(net.minecraft.tags.BlockTags.SNOW)||level.getBlockState(floor).is(Blocks.POWDER_SNOW))) return fail(player,"site");
             for (int y=0;y<=5;y++) {
                 var target=pos.offset(x,y,z);
-                if (!level.getBlockState(target).canBeReplaced() || !level.getFluidState(target).isEmpty()) return fail(player,"site");
+                if (!level.mayInteract(player,target)||level.getBlockEntity(target)!=null||!SitePreparation.cover(level.getBlockState(target)) || !level.getFluidState(target).isEmpty()) return fail(player,"site");
             }
         }
         Settlement s;
         try { s=data.state.found(player.getUUID(),level.dimension().identifier().toString(),pos.getX(),pos.getY(),pos.getZ(),
                 Math.floorDiv(level.getOverworldClockTime(),24000),SettlementConfig.rules()); }
         catch (IllegalArgumentException ex) { return fail(player,"distance"); }
+        // Founding also clears cover from the interior/doorway, not only from future wall blocks.
+        for(int x=-4;x<=4;x++)for(int z=-3;z<=3;z++)for(int y=0;y<=5;y++) {
+            var at=pos.offset(x,y,z);if(!level.getBlockState(at).isAir())level.setBlock(at,Blocks.AIR.defaultBlockState(),3);
+        }
         buildHall(level,pos);s.roofBannerCleaned=true;
         for (var r:s.residents) spawn(level,s,r);
         data.setDirty();
@@ -197,9 +201,9 @@ public final class ServerSettlements {
             }}
             case "build" -> {
                 int dx=(int)(request.amount()>>32),dz=(int)request.amount();
-                String result=Construction.request(p,s,request.text(),dx,dz);
-                ok=result.equals("ok");
-                var message=Component.translatable("message.smartsettlements.build_"+result,Component.translatable("building.smartsettlements."+request.text()));
+                var result=Construction.request(p,s,request.text(),dx,dz);
+                ok=result.ok();
+                var message=result.message();
                 if(ok)success=message;else SettlementNetwork.notice(p,s.id,false,message);
             }
             case "depositCoins", "withdrawCoins" -> {

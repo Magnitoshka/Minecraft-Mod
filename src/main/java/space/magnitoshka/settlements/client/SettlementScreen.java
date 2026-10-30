@@ -196,7 +196,7 @@ public final class SettlementScreen extends Screen {
     private void constructionWidgets() {
         int x=panelX+8,w=panelW-16;
         if(buildingDetails) {
-            button(x,177,w,tr("buildingCatalog"),()->{buildingDetails=false;selectedBuilding="";rebuildWidgets();});
+            button(x,195,w,tr("buildingCatalog"),()->{buildingDetails=false;selectedBuilding="";rebuildWidgets();});
             return;
         }
         int rows=catalogRows(),pages=(TYPES.length+rows-1)/rows;
@@ -383,19 +383,11 @@ public final class SettlementScreen extends Screen {
         if(terrain==null)return "unknown";
         int center=terrain.index(s.x+dx,s.z+dz);
         if(terrain.kind(center)==TerrainMap.UNKNOWN)return "unknown";
-        var heights=new java.util.ArrayList<Integer>();
         for(int z=dz-halfD;z<=dz+halfD;z++)for(int x=dx-halfW;x<=dx+halfW;x++) {
             int cell=terrain.index(s.x+x,s.z+z),kind=terrain.kind(cell);
             if(kind==TerrainMap.UNKNOWN)return "unknown";
-            if(kind==TerrainMap.WATER||kind==TerrainMap.LAVA)return "water";
+            if(kind==TerrainMap.LAVA)return "water";
             if(kind==TerrainMap.STRUCTURE)return "blocked";
-            if(kind!=TerrainMap.FOREST)heights.add((int)terrain.heights()[cell]);
-            if(!terrain.clear(cell)&&kind!=TerrainMap.FOREST)return "blocked";
-        }
-        heights.sort(Integer::compareTo);
-        if(!heights.isEmpty()) {
-            int y=heights.get(heights.size()/2);
-            for(int h:heights)if(h-y>space.magnitoshka.settlements.SitePreparation.MAX_CUT||y-h>space.magnitoshka.settlements.SitePreparation.MAX_FILL)return "uneven";
         }
         return "";
     }
@@ -446,6 +438,7 @@ public final class SettlementScreen extends Screen {
             text(g,Component.literal(b.x+", "+b.z),x,147,w,LIGHT);
             int progress=b.totalSteps()<=0?0:(int)((long)Math.clamp(b.completedSteps(),0,b.totalSteps())*(w-2)/b.totalSteps());
             g.fill(x,161,x+w,167,0xFF211B14);g.fill(x+1,162,x+1+progress,166,0xFFC8A05D);
+            if(!b.complete&&b.foundationRemaining>0)text(g,tr("foundationRemaining",b.foundationRemaining),x,177,w,0xFFC4AA7D);
         } else {
             int rows=catalogRows(),pages=(TYPES.length+rows-1)/rows;
             long wood=snapshot.settlement().resources.entrySet().stream().filter(entry->{

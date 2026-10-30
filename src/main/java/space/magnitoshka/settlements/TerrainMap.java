@@ -117,7 +117,7 @@ public final class TerrainMap {
                 kind=WATER;rgb=level.getBiome(pos).value().getWaterColor();
             } else if(level.getFluidState(pos).is(FluidTags.LAVA)) {kind=LAVA;rgb=0xDA6026;}
             else if(state.is(BlockTags.SAND)||state.is(Blocks.SANDSTONE)||state.is(Blocks.RED_SANDSTONE)) {kind=SAND;}
-            else if(state.is(Blocks.SNOW)||state.is(Blocks.SNOW_BLOCK)||state.is(Blocks.POWDER_SNOW)) {kind=SNOW;}
+            else if(state.is(net.minecraft.tags.BlockTags.SNOW)||state.is(net.minecraft.tags.BlockTags.ICE)||state.is(Blocks.POWDER_SNOW)) {kind=SNOW;}
             else if(state.is(BlockTags.LEAVES)||state.is(BlockTags.LOGS)) {kind=FOREST;rgb=level.getBiome(pos).value().getFoliageColor();}
             else if(state.is(Blocks.GRASS_BLOCK)||state.is(Blocks.MOSS_BLOCK)||color==MapColor.GRASS||color==MapColor.PLANT) {
                 kind=GRASS;rgb=level.getBiome(pos).value().getGrassColor(wx,wz);
@@ -127,7 +127,7 @@ public final class TerrainMap {
             boolean clear=level.getBlockEntity(floor)==null&&floorState.isFaceSturdy(level,floor,Direction.UP)&&level.getFluidState(floor).isEmpty();
             for(int y=1;y<=5&&clear;y++) {
                 var at=floor.above(y);
-                clear=at.getY()<level.getMaxY()&&level.getBlockState(at).canBeReplaced()&&level.getFluidState(at).isEmpty();
+                clear=at.getY()<level.getMaxY()&&SitePreparation.cover(level.getBlockState(at))&&level.getFluidState(at).isEmpty();
             }
             job.heights[i]=(short)Math.clamp(ground+1,Short.MIN_VALUE+1,Short.MAX_VALUE);
             job.flags[i]=(byte)(kind|(clear?CLEAR:0));

@@ -8,68 +8,62 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.ItemTags;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.state.properties.BedPart;
-import net.minecraft.world.level.levelgen.Heightmap;
 import space.magnitoshka.settlements.domain.*;
 
 public final class Construction {
-    public static String request(ServerPlayer player,Settlement s,String typeId,int dx,int dz) {
+    public record Result(String code,Component message) {
+        public boolean ok() {return code.equals("ok");}
+    }
+    private static Result reject(String code) {return new Result(code,Component.translatable("message.smartsettlements.build_"+code));}
+    public static Result request(ServerPlayer player,Settlement s,String typeId,int dx,int dz) {
         var type=BuildingType.byId(typeId);
-        if(type==null)return "invalid";
+        if(type==null)return reject("invalid");
         var level=(ServerLevel)player.level();
-        if(!level.dimension().identifier().toString().equals(s.dimension))return "dimension";
-        if(Math.abs((long)dx)>radius(s)||Math.abs((long)dz)>radius(s))return "territory";
+        if(!level.dimension().identifier().toString().equals(s.dimension))return reject("dimension");
+        if(Math.abs((long)dx)>radius(s)||Math.abs((long)dz)>radius(s))return reject("territory");
         int x=s.x+dx,z=s.z+dz;
-        if(Math.hypot(Math.abs((double)dx)+type.halfWidth,Math.abs((double)dz)+type.halfDepth)>radius(s))return "territory";
-        if(s.buildings.stream().filter(b->!b.complete).count()>=16)return "queue_full";
-        if(Math.abs(dx)<=4+type.halfWidth+1&&Math.abs(dz)<=3+type.halfDepth+1)return "collision";
+        if(Math.hypot(Math.abs((double)dx)+type.halfWidth,Math.abs((double)dz)+type.halfDepth)>radius(s))return reject("territory");
+        if(s.buildings.stream().filter(b->!b.complete).count()>=16)return reject("queue_full");
+        if(Math.abs(dx)<=4+type.halfWidth+1&&Math.abs(dz)<=3+type.halfDepth+1)return reject("collision");
         for(var b:s.buildings) {
             var other=BuildingType.byId(b.type);
-            if(other!=null&&Math.abs((long)x-b.x)<=type.halfWidth+other.halfWidth+1&&Math.abs((long)z-b.z)<=type.halfDepth+other.halfDepth+1)return "collision";
+            if(other!=null&&Math.abs((long)x-b.x)<=type.halfWidth+other.halfWidth+1&&Math.abs((long)z-b.z)<=type.halfDepth+other.halfDepth+1)return reject("collision");
         }
-        if(!level.hasChunkAt(new BlockPos(x-type.halfWidth,s.y,z-type.halfDepth))||!level.hasChunkAt(new BlockPos(x+type.halfWidth,s.y,z+type.halfDepth)))return "unloaded";
-        var plan=SitePreparation.plan(level,player,type,x,z);
-        if(plan==null)return "site";
-        int y=plan.y();
-        if(!level.hasChunkAt(new BlockPos(x,y,z-type.halfDepth-1)))return "unloaded";
-        var entrance=new BlockPos(x,level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,x,z-type.halfDepth-1),z-type.halfDepth-1);
-        if(Math.abs(entrance.getY()-y)>1||!walkable(level,entrance)||!reachable(level,new BlockPos(s.x,s.y,s.z-4),entrance,s))return "path";
-        if(wood(s)<type.woodCost||s.resources.getOrDefault("minecraft:cobblestone",0)<type.stoneCost+plan.fill())return "materials";
-        // Reserve the entire construction price atomically after every placement check passed.
+        if(!level.hasChunkAt(new BlockPos(x-type.halfWidth,s.y,z-type.halfDepth))||!level.hasChunkAt(new BlockPos(x+type.halfWidth,s.y,z+type.halfDepth)))return reject("unloaded");
+        // Future building footprints may not cut off a saved access route.
+        for(var b:s.buildings)for(var point:b.access)
+            if(Math.abs(point.x()-x)<=type.halfWidth&&Math.abs(point.z()-z)<=type.halfDepth)return reject("collision");
+        var result=SitePreparation.plan(level,player,s,type,x,z);
+        if(result.plan()==null) {
+            var at=result.at();
+            var block=level.hasChunkAt(at)?level.getBlockState(at).getBlock().getName():Component.literal("?");
+            var message=Component.translatable("message.smartsettlements.site_detail",
+                Component.translatable("message.smartsettlements.site_"+result.problem()),block,at.getX(),at.getY(),at.getZ());
+            return new Result("site",message);
+        }
+        var plan=result.plan();int y=plan.y();
+        if(wood(s)<type.woodCost||s.resources.getOrDefault("minecraft:cobblestone",0)<type.stoneCost)return reject("materials");
+        // Reserve base building materials only; depth must not require a warehouse-sized prepayment.
         int remaining=type.woodCost;
         for(var key:s.resources.keySet().stream().sorted().toList())if(isWood(key)&&remaining>0)remaining-=s.withdraw(key,remaining);
-        s.withdraw("minecraft:cobblestone",type.stoneCost+plan.fill());
+        s.withdraw("minecraft:cobblestone",type.stoneCost);
         var building=new Building(type,x,y,z,BuildingTemplates.pieces(type).size());
-        building.preparation=plan.edits();building.preparationTotal=plan.edits().size();building.hasStand=true;
-        building.standX=entrance.getX();building.standY=entrance.getY();building.standZ=entrance.getZ();
+        building.columns=plan.columns();building.access=plan.access();building.preparationTotal=plan.steps();
+        building.foundationRemaining=plan.fill();building.foundationPrepaid=false;building.hasStand=true;
+        var entrance=plan.access().getLast();
+        building.standX=entrance.x();building.standY=entrance.y();building.standZ=entrance.z();
         s.buildings.add(building);
-        return "ok";
+        return new Result("ok",Component.translatable("message.smartsettlements.build_ok",
+            Component.translatable("building.smartsettlements."+type.id),plan.fill()));
     }
     private static boolean isWood(String key) {
         var item=BuiltInRegistries.ITEM.getValue(Identifier.parse(key));
         return item!=null&&item.getDefaultInstance().is(ItemTags.LOGS);
     }
     private static long wood(Settlement s) {return s.resources.entrySet().stream().filter(e->isWood(e.getKey())).mapToLong(Map.Entry::getValue).sum();}
-    private static boolean walkable(ServerLevel level,BlockPos feet) {
-        return level.hasChunkAt(feet)&&level.getBlockState(feet.below()).isFaceSturdy(level,feet.below(),Direction.UP)
-            &&level.getFluidState(feet).isEmpty()&&level.getBlockState(feet).getCollisionShape(level,feet).isEmpty()
-            &&level.getBlockState(feet.above()).getCollisionShape(level,feet.above()).isEmpty();
-    }
-    private static boolean reachable(ServerLevel level,BlockPos from,BlockPos to,Settlement s) {
-        if(!walkable(level,from))return false;
-        var queue=new PriorityQueue<BlockPos>(Comparator.comparingDouble(p->p.distSqr(to)));
-        var seen=new HashSet<BlockPos>();queue.add(from);seen.add(from);
-        while(!queue.isEmpty()&&seen.size()<4096) {
-            var p=queue.remove();if(p.equals(to))return true;
-            for(var direction:Direction.Plane.HORIZONTAL)for(int dy:new int[]{0,1,-1}) {
-                var next=p.relative(direction).offset(0,dy,0);
-                if(Math.hypot((double)next.getX()-s.x,(double)next.getZ()-s.z)>radius(s)+1||seen.contains(next))continue;
-                if(walkable(level,next)) {seen.add(next);queue.add(next);break;}
-            }
-        }
-        return false;
-    }
     public static List<BlockPos> beds(ServerLevel level,Settlement s) {
         var beds=new ArrayList<BlockPos>();
         for(int i=0;i<SettlementConfig.BEDS.get();i++)addBed(level,beds,new BlockPos(s.x-2+i*2,s.y,s.z+2));

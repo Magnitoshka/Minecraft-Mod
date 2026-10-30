@@ -38,8 +38,8 @@ public final class CitizenWork {
     }
     private void build(CitizenEntity citizen,ServerLevel level,SettlementData data,Settlement s,Resident r) {
         var pending=s.buildings.stream().filter(b->!b.complete).toList();
-        var blocked=pending.stream().filter(b->"blocked".equals(b.status)).toList();
-        var active=pending.stream().filter(b->!"blocked".equals(b.status)).findFirst().orElse(null);
+        var blocked=pending.stream().filter(b->"blocked".equals(b.status)||"materials".equals(b.status)).toList();
+        var active=pending.stream().filter(b->!"blocked".equals(b.status)&&!"materials".equals(b.status)).findFirst().orElse(null);
         var job=active;
         if(!blocked.isEmpty()&&(active==null||citizen.tickCount%100==0))job=blocked.get(Math.floorMod(buildRetryCursor++,blocked.size()));
         if(job==null) {r.workStatus="idle";r.taskBuilding="";return;}
@@ -48,7 +48,8 @@ public final class CitizenWork {
         if(type==null) {block(level,data,s,r,job);return;}
         BlockPos origin=new BlockPos(job.x,job.y,job.z);
         var entrance=job.hasStand?new BlockPos(job.standX,job.standY,job.standZ):origin.offset(0,0,-type.halfDepth-1);
-        if(!approach(citizen,entrance,r,4)) {if(r.workStatus.equals("blocked"))block(level,data,s,r,job);return;}
+        if(job.columnCursor<job.columns.size()) {prepareColumns(citizen,level,data,s,r,job);return;}
+        if(!(job.access.isEmpty()?approach(citizen,entrance,r,4):approachAccess(citizen,s,job,job.access.size()-1,r))) {if(r.workStatus.equals("blocked"))block(level,data,s,r,job);return;}
         if(job.prepared<job.preparation.size()) {prepare(citizen,level,data,s,r,job);return;}
         var pieces=BuildingTemplates.pieces(type);
         int count=Math.max(1,(int)Math.floor(SettlementConfig.BUILD_RATE.get()*r.workEfficiency()));
@@ -59,7 +60,7 @@ public final class CitizenWork {
             var current=level.getBlockState(at);
             // Resume safely if the previous write was saved before its progress cursor.
             if(!BuildingTemplates.matches(current,piece.state())) {
-                if(level.getBlockEntity(at)!=null || (piece.y()>=0&&!current.canBeReplaced())) {
+                if(level.getBlockEntity(at)!=null || current.getDestroySpeed(level,at)<0 || !level.getFluidState(at).isEmpty() || (piece.y()>=0&&!SitePreparation.cover(current))) {
                     block(level,data,s,r,job);break;
                 }
                 if(piece.y()<0 && (!current.isFaceSturdy(level,at,net.minecraft.core.Direction.UP)
@@ -84,11 +85,91 @@ public final class CitizenWork {
             }
             if(missing>=0) {job.progress=missing;block(level,data,s,r,job);}
             else {
-                job.complete=true;job.status="complete";job.preparation.clear();changed=true;r.workStatus="idle";
+                job.complete=true;job.status="complete";job.preparation.clear();job.columns.clear();changed=true;r.workStatus="idle";
                 SettlementNetwork.ownerNotice(level.getServer(),s,true,"action.smartsettlements.construction_complete",net.minecraft.network.chat.Component.translatable("building.smartsettlements."+job.type));
             }
         }
         if(changed) {citizen.swingForAttack(InteractionHand.MAIN_HAND);data.setDirty();}
+    }
+    private boolean prepareColumns(CitizenEntity citizen,ServerLevel level,SettlementData data,Settlement s,Resident r,Building job) {
+        int budget=Math.max(1,(int)Math.floor(SettlementConfig.BUILD_RATE.get()*r.workEfficiency()));
+        while(budget>0&&job.columnCursor<job.columns.size()) {
+            var column=job.columns.get(job.columnCursor);
+            if(column.runIndex>=column.clear.size()&&column.fillY>=column.y) {job.columnCursor++;data.setDirty();continue;}
+            if(!approachAccess(citizen,s,job,column.workIndex,r)) {
+                if(r.workStatus.equals("blocked"))block(level,data,s,r,job);return false;
+            }
+            boolean fill=column.runIndex>=column.clear.size();
+            var run=fill?null:column.clear.get(column.runIndex);
+            var at=new BlockPos(column.x,fill?column.fillY:column.clearY,column.z);
+            if(!Construction.canChange(level,at,s.owner)||level.getBlockEntity(at)!=null) {blockAt(level,data,s,r,job,at);return false;}
+            var state=level.getBlockState(at);
+            boolean done=fill?state.is(Blocks.COBBLESTONE):state.isAir();
+            if(!done) {
+                while(fill&&column.fillRun<column.fill.size()-1&&column.fillY>column.fill.get(column.fillRun).top())column.fillRun++;
+                String expected=fill?column.fill.get(column.fillRun).block():run.block();
+                boolean original=BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString().equals(expected)
+                    ||(fill&&state.is(BlockTags.ICE)&&(expected.equals("minecraft:water")||expected.equals("minecraft:air")));
+                boolean safe=fill?SitePreparation.fillable(state)&&SitePreparation.stable(level,at.below())
+                    &&(original||state.isAir()||state.is(Blocks.WATER))
+                    &&(level.getFluidState(at).isEmpty()||level.getFluidState(at).is(net.minecraft.tags.FluidTags.WATER))
+                    :SitePreparation.removable(state)&&level.getFluidState(at).isEmpty()
+                        &&original;
+                if(!safe||state.getDestroySpeed(level,at)<0) {blockAt(level,data,s,r,job,at);return false;}
+                if(fill&&!job.foundationPrepaid&&s.resources.getOrDefault("minecraft:cobblestone",0)<1) {
+                    boolean notify=!job.status.equals("materials");job.status="materials";r.workStatus="materials";data.setDirty();
+                    if(notify)SettlementNetwork.ownerNotice(level.getServer(),s,false,"action.smartsettlements.foundation_materials",
+                        net.minecraft.network.chat.Component.translatable("building.smartsettlements."+job.type));
+                    return false;
+                }
+                // Direct replacement prevents ice turning into water, unlike breaking the ice block.
+                if(!level.setBlock(at,fill?Blocks.COBBLESTONE.defaultBlockState():Blocks.AIR.defaultBlockState(),3)) {blockAt(level,data,s,r,job,at);return false;}
+                if(fill&&!job.foundationPrepaid)s.withdraw("minecraft:cobblestone",1);
+                if(!fill&&state.is(BlockTags.LOGS))s.deposit(BuiltInRegistries.ITEM.getKey(state.getBlock().asItem()).toString(),1,Construction.capacity(s));
+                preparationNotice(level,s,job);
+            }
+            if(fill) {column.fillY++;job.foundationRemaining=Math.max(0,job.foundationRemaining-1);}
+            else if(--column.clearY<run.bottom()) {
+                column.runIndex++;
+                if(column.runIndex<column.clear.size())column.clearY=column.clear.get(column.runIndex).top();
+            }
+            job.prepared++;budget--;job.status="leveling";r.workStatus="leveling";data.setDirty();
+            Construction.award(r,SettlementConfig.BUILDER_XP.get());citizen.swingForAttack(InteractionHand.MAIN_HAND);
+        }
+        return job.columnCursor>=job.columns.size();
+    }
+    private void preparationNotice(ServerLevel level,Settlement s,Building job) {
+        if(job.preparationStarted)return;
+        job.preparationStarted=true;
+        SettlementNetwork.ownerNotice(level.getServer(),s,true,"action.smartsettlements.preparation_started",
+            net.minecraft.network.chat.Component.translatable("building.smartsettlements."+job.type));
+    }
+    private boolean approachAccess(CitizenEntity citizen,Settlement s,Building job,int destination,Resident r) {
+        if(job.access.isEmpty())return approach(citizen,new BlockPos(job.standX,job.standY,job.standZ),r,4);
+        destination=Math.clamp(destination,0,job.access.size()-1);
+        var target=job.access.get(destination);
+        if(citizen.distanceToSqr(target.x()+.5,target.y(),target.z()+.5)<=9)return true;
+        int closest=0;double distance=Double.MAX_VALUE;
+        for(int i=0;i<=destination;i++) {
+            var p=job.access.get(i);double current=citizen.distanceToSqr(p.x()+.5,p.y(),p.z()+.5);
+            if(current<distance) {closest=i;distance=current;}
+        }
+        if(distance>16) {
+            // A builder returning from a different site follows that site's finished access back home.
+            for(var other:s.buildings)if(other!=job&&!other.access.isEmpty()) {
+                int limit=other.columns.isEmpty()?other.access.size():Math.min(other.access.size(),other.columnCursor+1);
+                for(int i=1;i<limit;i++) {
+                    var p=other.access.get(i);
+                    if(citizen.distanceToSqr(p.x()+.5,p.y(),p.z()+.5)>9)continue;
+                    var back=other.access.get(Math.max(0,i-4));
+                    approach(citizen,new BlockPos(back.x(),back.y(),back.z()),r,1);return false;
+                }
+            }
+        }
+        // Short waypoints avoid the mob's finite path search range, even on a perfectly flat world.
+        var next=job.access.get(distance>16?closest:Math.min(destination,closest+4));
+        approach(citizen,new BlockPos(next.x(),next.y(),next.z()),r,1);
+        return false;
     }
     private void prepare(CitizenEntity citizen,ServerLevel level,SettlementData data,Settlement s,Resident r,Building job) {
         int count=Math.max(1,(int)Math.floor(SettlementConfig.BUILD_RATE.get()*r.workEfficiency()));
@@ -119,6 +200,12 @@ public final class CitizenWork {
             Construction.award(r,SettlementConfig.BUILDER_XP.get());data.setDirty();
             citizen.swingForAttack(InteractionHand.MAIN_HAND);
         }
+    }
+    private void blockAt(ServerLevel level,SettlementData data,Settlement s,Resident r,Building job,BlockPos at) {
+        boolean notify=!job.status.equals("blocked");job.status="blocked";r.workStatus="blocked";data.setDirty();
+        if(notify)SettlementNetwork.ownerNotice(level.getServer(),s,false,"action.smartsettlements.construction_blocked_at",
+            net.minecraft.network.chat.Component.translatable("building.smartsettlements."+job.type),level.getBlockState(at).getBlock().getName(),
+            at.getX(),at.getY(),at.getZ());
     }
     private void block(ServerLevel level,SettlementData data,Settlement s,Resident r,Building job) {
         boolean newlyBlocked=!"blocked".equals(job.status);
@@ -165,7 +252,7 @@ public final class CitizenWork {
                 int top=level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,x,z);
                 for(int y=Math.max(level.getMinY()+1,top-24);y<=top;y++) {
                     var base=new BlockPos(x,y,z);
-                    if(!level.getBlockState(base).is(BlockTags.LOGS)||!level.getBlockState(base.below()).is(BlockTags.DIRT))continue;
+                    if(!level.getBlockState(base).is(BlockTags.LOGS)||!level.getBlockState(base.below()).is(BlockTags.SUBSTRATE_OVERWORLD))continue;
                     if(!hasLeaves(level,base))continue;
                     collectTree(level,base,s);break;
                 }
@@ -221,7 +308,7 @@ public final class CitizenWork {
         if(treeSpecies.endsWith(":dark_oak_log")||treeSpecies.endsWith(":pale_oak_log")) {
             for(int x=0;x<2;x++)for(int z=0;z<2;z++) {
                 var p=treeBase.offset(x,0,z);
-                if(Construction.canChange(level,p,s.owner)&&Math.hypot((double)p.getX()-s.x,(double)p.getZ()-s.z)<=Construction.radius(s)&&level.getBlockState(p).canBeReplaced()&&level.getBlockState(p.below()).is(BlockTags.DIRT))level.setBlock(p,sapling.defaultBlockState(),3);
+                if(Construction.canChange(level,p,s.owner)&&Math.hypot((double)p.getX()-s.x,(double)p.getZ()-s.z)<=Construction.radius(s)&&level.getBlockState(p).canBeReplaced()&&level.getBlockState(p.below()).is(BlockTags.SUBSTRATE_OVERWORLD))level.setBlock(p,sapling.defaultBlockState(),3);
             }
         }
     }
