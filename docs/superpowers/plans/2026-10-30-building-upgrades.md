@@ -11,7 +11,7 @@
 - [x] Add server upgrade operation: validate owner/dimension/complete building/maximum tier/cargo return/prerequisites/materials/protection and old-vs-new template before any charge. Reserve a fixed cost, reset only the work cursor, leave completed tier unchanged until verified completion. Resume safely after reload and never consume a previous contract twice.
 - [x] Complete builder integration and apply level effects on verified finish. Hall upgrades require8/20 residents and specified completed building sets. Increase territory conservatively within non-overlap constraints. Preserve all buildings as collision exclusions while upgrading.
 - [x] Add map buttons for hall/building upgrades, current/target tier, requirements and server-authoritative prices. Add all catalogue entries with unlock hints, RU/EN texts and protocol bump.
-- [ ] Static review upgrade repair/container/bed handling, old-save compatibility, resource conservation, job ownership, unlock checks and growth. Run Java25 clean assemble only; inspect actual JAR classes/resources and checksums. Document remaining later-stage work, commit/push source and artifact, provide direct download.
+- [x] Static review upgrade repair/container/bed handling, old-save compatibility, resource conservation, job ownership, unlock checks and growth. Run Java25 clean assemble only; inspect actual JAR classes/resources and checksums. Document remaining later-stage work, commit/push source and artifact, provide direct download.
 
 Scope: this release completes a usable progression/upgrade slice of stage2. Custom downloaded house artwork, configurable field-zone sizing, and professions/combat/trade for newly unlocked buildings remain subsequent work. Existing footprints remain stable during upgrades.
 
@@ -19,3 +19,8 @@ Scope: this release completes a usable progression/upgrade slice of stage2. Cust
 
 - Read-only reviewer found a configured-price deadlock when one work step required more material than a load. Added persisted stagedWood/stagedStone: physical deliveries accumulate at the site until the next quota is covered, then a successful piece consumes it. Review confirmed conservation across reservation, cargo, staging, repair cursors, reassignment and reload. No further important defect reported.
 - Runtime/game/tests remain prohibited by the author's instruction. Verification is source review, fresh standard Gradle clean assemble and archive/resource inspection.
+
+## Delivery
+
+- Java25 `./gradlew clean assemble --offline` passed; no runtime or tests launched. Validated59 classes,224 matching RU/EN localization keys,0.7.0 metadata, staging code, archive integrity and all artifact SHA256 checksums.
+- Source and223794-byte JAR published in `0e0b024` to `origin/feat/settlements-mvp`. GitHub contents API confirms the artifact Git blob matches the local file (`01dd79e1218807231f6642c746e970c45b88320b`).
