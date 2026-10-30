@@ -3,7 +3,7 @@ loaderVersion="[66,)"
 license="All Rights Reserved"
 [[mods]]
 modId="smartsettlements"
-version="0.2.0+26.3"
+version="0.3.0+26.3"
 displayName="Smart Settlements / Умные поселения"
 authors="Magnitoshka"
 description='''Medieval settlement management: construction, jobs, personal citizen skins, storage, food and treasury.'''

@@ -21,14 +21,7 @@ public final class WorldState {
 
     public Settlement found(UUID owner, String dimension, int x, int y, int z, long day, Rules rules) {
         if (owner == null || dimension == null || dimension.isBlank()) throw new IllegalArgumentException("Missing owner or dimension");
-        double required = 2.0 * rules.radius() + rules.gap();
-        for (var other : settlements.values()) {
-            double dx = (double) x - other.x;
-            double dz = (double) z - other.z;
-            if (dimension.equals(other.dimension) && Math.hypot(dx, dz) < required) {
-                throw new IllegalArgumentException("Settlement territory is too close");
-            }
-        }
+        if(placementConflict(dimension,x,z,rules)!=null)throw new IllegalArgumentException("Settlement territory is too close");
         var s = new Settlement();
         s.owner = owner;
         s.dimension = dimension;
@@ -36,6 +29,7 @@ public final class WorldState {
         s.y = y;
         s.z = z;
         s.lastDay = day;
+        s.radius=rules.radius();
         s.name = nextName();
         s.deposit("minecraft:oak_log", rules.starterWood(), rules.capacity());
         s.deposit("minecraft:cobblestone", rules.starterStone(), rules.capacity());
@@ -45,6 +39,14 @@ public final class WorldState {
         return s;
     }
 
+    public Settlement placementConflict(String dimension,int x,int z,Rules rules) {
+        for(var other:settlements.values()) {
+            int radius=other.radius>0?other.radius:rules.radius();
+            double distance=Math.hypot((double)x-other.x,(double)z-other.z);
+            if(dimension.equals(other.dimension)&&distance<rules.radius()+(double)radius+rules.gap())return other;
+        }
+        return null;
+    }
     public Settlement owned(UUID actor, UUID id) {
         var s = accessible(actor, id);
         if (s == null) throw new IllegalArgumentException("Unknown settlement or not the owner");

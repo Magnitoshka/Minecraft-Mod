@@ -1,5 +1,6 @@
 package space.magnitoshka.settlements.client;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -13,6 +14,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 import space.magnitoshka.settlements.SettlementNetwork;
+import space.magnitoshka.settlements.TerrainMap;
 import space.magnitoshka.settlements.domain.Building;
 import space.magnitoshka.settlements.domain.BuildingType;
 import space.magnitoshka.settlements.domain.Resident;
@@ -24,7 +26,11 @@ public final class SettlementScreen extends Screen {
     private static final String[] PROFESSIONS={"unemployed","builder","lumberjack","miner","farmer"};
     private static final String[] TYPES={"house","warehouse","lumber_hut","mine","field"};
     private SettlementNetwork.Snapshot snapshot;
-    private int tab, overviewPage, residentIndex, resourcePage, professionIndex;
+    private space.magnitoshka.settlements.TerrainMap.Survey terrain;
+    private Component feedback;
+    private boolean feedbackSuccess,feedbackPending;
+    private long feedbackUntil;
+    private int tab, overviewPage, residentIndex, resourcePage, professionIndex, catalogPage;
     private String citizen="", selectedBuilding="", buildChoice="", professionResident="";
     private boolean buildingDetails;
     private EditBox rename, amount;
@@ -41,6 +47,13 @@ public final class SettlementScreen extends Screen {
 
     private static Component tr(String key,Object... args) {
         return Component.translatable("ui.smartsettlements."+key,args);
+    }
+    public void terrain(space.magnitoshka.settlements.TerrainMap.Survey survey) {
+        if(snapshot.settlement()!=null&&survey.settlement().equals(snapshot.settlement().id.toString()))terrain=survey;
+    }
+    public void notice(space.magnitoshka.settlements.SettlementNetwork.Notice notice) {
+        if(!notice.settlement().isEmpty()&&(snapshot.settlement()==null||!notice.settlement().equals(snapshot.settlement().id.toString())))return;
+        feedback=notice.message();feedbackSuccess=notice.success();feedbackPending=false;feedbackUntil=System.currentTimeMillis()+7000;
     }
     private static Component profession(String id) { return Component.translatable("profession.smartsettlements."+id); }
     private static Component buildingName(String id) { return Component.translatable("building.smartsettlements."+id); }
@@ -66,7 +79,7 @@ public final class SettlementScreen extends Screen {
             .equals(incoming.residents.stream().map(r->r.id).toList());
         snapshot=next;
         if(switched) {
-            rename=null; amount=null; renameDraft=null; amountDraft="10";
+            rename=null; amount=null; renameDraft=null; amountDraft="10";terrain=null;feedback=null;
             citizen=""; selectedBuilding=""; buildChoice=""; buildingDetails=false;
             residentIndex=resourcePage=0;panX=panZ=0;
         }
@@ -166,7 +179,7 @@ public final class SettlementScreen extends Screen {
     }
     private void warehouseWidgets() {
         int x=panelX+8,w=panelW-16;
-        button(x,107,w,tr("depositHeld"),()->action("depositItem","",0)).setTooltip(Tooltip.create(tr("nearHall")));
+        button(x,107,w,tr("openWarehouse"),()->action("warehouse","",0)).setTooltip(Tooltip.create(tr("nearHall")));
         var keys=snapshot.settlement().resources.keySet().stream().sorted().toList();
         int rows=resourceRows();resourcePage=Math.min(resourcePage,Math.max(0,(keys.size()-1)/rows));
         for(int i=resourcePage*rows;i<Math.min((resourcePage+1)*rows,keys.size());i++) {
@@ -178,18 +191,26 @@ public final class SettlementScreen extends Screen {
         button(x,height-57,(w-4)/2,tr("previous"),()->{resourcePage=Math.max(0,resourcePage-1);rebuildWidgets();});
         button(x+(w+4)/2,height-57,(w-4)/2,tr("next"),()->{if((resourcePage+1)*rows<keys.size())resourcePage++;rebuildWidgets();});
     }
+    private int catalogRows() {return Math.clamp((height-141)/38,1,5);}
     private void constructionWidgets() {
         int x=panelX+8,w=panelW-16;
         if(buildingDetails) {
             button(x,177,w,tr("buildingCatalog"),()->{buildingDetails=false;selectedBuilding="";rebuildWidgets();});
             return;
         }
-        for(int i=0;i<TYPES.length;i++) {
+        int rows=catalogRows(),pages=(TYPES.length+rows-1)/rows;
+        catalogPage=Math.clamp(catalogPage,0,pages-1);
+        for(int i=catalogPage*rows;i<Math.min((catalogPage+1)*rows,TYPES.length);i++) {
             final int index=i;
-            addRenderableWidget(new MedievalButton(x,91+i*21,w,18,buildingName(TYPES[i]),()->{
+            var blueprint=new MedievalButton(x,91+(i-catalogPage*rows)*38,w,18,buildingName(TYPES[i]),()->{
                 buildChoice=buildChoice.equals(TYPES[index])?"":TYPES[index];selectedBuilding="";
-            },()->buildChoice.equals(TYPES[index])));
+            },()->buildChoice.equals(TYPES[index]));
+            var type=BuildingType.byId(TYPES[i]);
+            blueprint.setTooltip(Tooltip.create(buildingName(TYPES[i]).copy().append("\n").append(tr("buildingCost",type.woodCost,type.stoneCost))));
+            addRenderableWidget(blueprint);
         }
+        button(x,height-42,18,Component.literal("<"),()->{catalogPage=Math.floorMod(catalogPage-1,pages);rebuildWidgets();});
+        button(x+w-18,height-42,18,Component.literal(">"),()->{catalogPage=(catalogPage+1)%pages;rebuildWidgets();});
     }
     private void selectSettlement(int index) {
         var list=snapshot.settlements();if(list.isEmpty())return;
@@ -214,7 +235,9 @@ public final class SettlementScreen extends Screen {
         g.fill(0,0,width,height,0xF21E1914);
         for(int y=0;y<height;y+=12)g.fill(0,y,width,y+1,0xFF2A2118);
         g.fill(8,8,width-8,30,0xFF3B2A1C);g.fill(8,29,width-8,30,0xFFB48B50);
-        text(g,title,16,15,width-64,GOLD);
+        boolean showFeedback=feedback!=null&&System.currentTimeMillis()<feedbackUntil;
+        text(g,showFeedback?feedback:title,16,15,width-64,showFeedback?(feedbackPending?GOLD:feedbackSuccess?0xFFA9CB84:0xFFFFAA87):GOLD);
+        if(showFeedback&&mouseY>=8&&mouseY<=30)g.setTooltipForNextFrame(feedback,mouseX,mouseY);
         if(snapshot.settlement()==null) {
             frame(g,12,64,width-24,height-90,0xFFD4BE91);
             text(g,tr("noSettlement"),24,86,width-48,INK);
@@ -232,7 +255,7 @@ public final class SettlementScreen extends Screen {
                 text(g,tr("capacity",snapshot.settlement().stored(),snapshot.capacity()),panelX+8,92,panelW-16,LIGHT);
                 text(g,tr("storageHint"),panelX+8,height-30,panelW-16,0xFFC4AA7D);
             }
-            case 3 -> drawConstruction(g);
+            case 3 -> drawConstruction(g,mouseX,mouseY);
         }
         super.extractRenderState(g,mouseX,mouseY,delta);
     }
@@ -240,12 +263,13 @@ public final class SettlementScreen extends Screen {
     private int centerZ() {return (mapTop+mapBottom)/2;}
     private int mapX(double relative) {return (int)Math.round(centerX()+(relative-panX)*zoom);}
     private int mapZ(double relative) {return (int)Math.round(centerZ()+(relative-panZ)*zoom);}
-    private int worldDx(double pixel) {return (int)Math.round((pixel-centerX())/zoom+panX);}
-    private int worldDz(double pixel) {return (int)Math.round((pixel-centerZ())/zoom+panZ);}
+    private int worldDx(double pixel) {return (int)Math.floor((pixel-centerX())/zoom+panX);}
+    private int worldDz(double pixel) {return (int)Math.floor((pixel-centerZ())/zoom+panZ);}
     private boolean inMap(double x,double y) {return x>=mapLeft&&x<mapRight&&y>=mapTop&&y<mapBottom;}
     private void drawMap(GuiGraphicsExtractor g,int mouseX,int mouseY) {
         var s=snapshot.settlement();
         g.enableScissor(mapLeft+2,mapTop+2,mapRight-2,mapBottom-2);
+        drawTerrain(g);
         for(int x=mapLeft+4;x<mapRight;x+=19)for(int y=mapTop+5;y<mapBottom;y+=17)
             g.fill(x,y,x+1,y+1,0x20826C43);
         int grid=Math.max(12,(int)(16*zoom));
@@ -258,7 +282,7 @@ public final class SettlementScreen extends Screen {
             g.fill(x,z,x+1,z+1,0xFF8A6A37);
         }
         drawBuilding(g,s.x,s.z,4,3,true,true,0xFF7E4D2B);
-        Component hover=null;
+        Component hover=terrainInfo(mouseX,mouseY);
         for(var b:buildings()) {
             int halfW=halfWidth(b.type);
             int color=switch(b.type) {case "field"->0xFF708447;case "mine"->0xFF777369;case "warehouse"->0xFF8F6034;default->0xFF9A7244;};
@@ -291,7 +315,8 @@ public final class SettlementScreen extends Screen {
             int x1=mapX(dx-halfW),x2=mapX(dx+halfW+1),z1=mapZ(dz-halfD),z2=mapZ(dz+halfD+1);
             g.fill(x1,z1,x2,z2,valid?0x665D893C:0x66AA4234);
             border(g,x1,z1,x2,z2,valid?0xFF45662A:0xFF9F3326);
-            hover=tr(valid?"placeBuilding":"invalidFootprint");
+            String problem=placementProblem(dx,dz,halfW,halfD);
+            hover=problem.isEmpty()?tr("placeBuilding"):tr("placement."+problem);
         }
         // Compass and small scale line are anchored to the parchment, not the world.
         int compassX=mapRight-19,compassY=mapTop+20;
@@ -300,6 +325,15 @@ public final class SettlementScreen extends Screen {
         g.fill(compassX-1,compassY-4,compassX+2,compassY-1,0xFFA05137);
         g.text(font,"N",compassX-2,compassY-15,INK,false);
         text(g,tr(buildChoice.isEmpty()?"mapHint":"placementHint"),mapLeft+7,mapTop+7,Math.max(1,mapRight-mapLeft-40),INK);
+        g.fill(mapLeft+2,mapBottom-28,mapRight-2,mapBottom-2,0xDDDBC69C);
+        int legendX=mapLeft+6;
+        String[] kinds={"water","sand","land"};int[] colors={0xFF3F76E4,0xFFD9C084,0xFF75994B};
+        for(int i=0;i<kinds.length;i++) {
+            String label=tr("terrain."+kinds[i]).getString();
+            int length=font.width(label)+11;if(legendX+length>=mapRight-3)break;
+            g.fill(legendX,mapBottom-24,legendX+5,mapBottom-19,colors[i]);
+            g.text(font,label,legendX+7,mapBottom-25,INK,false);legendX+=length;
+        }
         text(g,Component.literal(s.x+", "+s.z),mapLeft+7,mapBottom-12,mapRight-mapLeft-14,INK);
         g.disableScissor();
         if(hover!=null&&inMap(mouseX,mouseY))g.setTooltipForNextFrame(hover,mouseX,mouseY);
@@ -319,16 +353,54 @@ public final class SettlementScreen extends Screen {
             g.fill(x1+1,z1+1,x2-1,mid,color|0xFF000000);g.fill(x1+1,mid,x2-1,mid+1,0xFFC39E65);
         }
     }
-    private boolean previewValid(int dx,int dz,int halfW,int halfD) {
-        for(int x:new int[]{dx-halfW,dx+halfW})for(int z:new int[]{dz-halfD,dz+halfD})
-            if(Math.hypot(x,z)>snapshot.radius())return false;
-        if(Math.abs(dx)<halfW+6&&Math.abs(dz)<halfD+5)return false;
+    private void drawTerrain(GuiGraphicsExtractor g) {
+        g.fill(mapLeft,mapTop,mapRight,mapBottom,0xFF8A8273);
+        for(int y=mapTop;y<mapBottom;y+=8)for(int x=mapLeft+(y%16==0?0:4);x<mapRight;x+=8)
+            g.fill(x,y,x+2,y+2,0xFF756F64);
+        if(terrain==null||snapshot.settlement()==null)return;
         var s=snapshot.settlement();
-        for(var b:buildings()) {
-            int otherW=halfWidth(b.type);
-            if(Math.abs(s.x+dx-b.x)<halfW+otherW+2&&Math.abs(s.z+dz-b.z)<halfD+halfDepth(b.type)+2)return false;
+        int minX=Math.clamp(Math.floorDiv(s.x+worldDx(mapLeft)-terrain.originX(),terrain.step())-1,0,terrain.size()-1);
+        int maxX=Math.clamp(Math.floorDiv(s.x+worldDx(mapRight)-terrain.originX(),terrain.step())+1,0,terrain.size()-1);
+        int minZ=Math.clamp(Math.floorDiv(s.z+worldDz(mapTop)-terrain.originZ(),terrain.step())-1,0,terrain.size()-1);
+        int maxZ=Math.clamp(Math.floorDiv(s.z+worldDz(mapBottom)-terrain.originZ(),terrain.step())+1,0,terrain.size()-1);
+        for(int z=minZ;z<=maxZ;z++)for(int x=minX;x<=maxX;x++) {
+            int i=z*terrain.size()+x;if(terrain.kind(i)==TerrainMap.UNKNOWN)continue;
+            int dx=terrain.originX()+x*terrain.step()-s.x,dz=terrain.originZ()+z*terrain.step()-s.z;
+            int x1=mapX(dx),x2=mapX(dx+terrain.step()),z1=mapZ(dz),z2=mapZ(dz+terrain.step());
+            if(x2>x1&&z2>z1)g.fill(x1,z1,x2,z2,terrain.colors()[i]);
         }
-        return true;
+    }
+    private Component terrainInfo(double mouseX,double mouseY) {
+        if(!inMap(mouseX,mouseY)||snapshot.settlement()==null)return null;
+        int x=snapshot.settlement().x+worldDx(mouseX),z=snapshot.settlement().z+worldDz(mouseY);
+        int index=terrain==null?-1:terrain.index(x,z);
+        if(terrain==null||terrain.kind(index)==TerrainMap.UNKNOWN)return tr("terrainUnknown",x,z);
+        String kind=switch(terrain.kind(index)) {
+            case TerrainMap.WATER->"water";case TerrainMap.SAND->"sand";case TerrainMap.GRASS->"grass";
+            case TerrainMap.STONE->"stone";case TerrainMap.SNOW->"snow";case TerrainMap.FOREST->"forest";
+            case TerrainMap.STRUCTURE->"structure";case TerrainMap.LAVA->"lava";default->"land";
+        };
+        return tr("terrainInfo",tr("terrain."+kind),terrain.heights()[index],x,z);
+    }
+    private boolean previewValid(int dx,int dz,int halfW,int halfD) {return placementProblem(dx,dz,halfW,halfD).isEmpty();}
+    private String placementProblem(int dx,int dz,int halfW,int halfD) {
+        for(int x:new int[]{dx-halfW,dx+halfW})for(int z:new int[]{dz-halfD,dz+halfD})
+            if(Math.hypot(x,z)>snapshot.radius())return "territory";
+        if(Math.abs(dx)<halfW+6&&Math.abs(dz)<halfD+5)return "collision";
+        var s=snapshot.settlement();
+        for(var b:buildings())if(Math.abs(s.x+dx-b.x)<halfW+halfWidth(b.type)+2&&Math.abs(s.z+dz-b.z)<halfD+halfDepth(b.type)+2)return "collision";
+        if(terrain==null)return "unknown";
+        int center=terrain.index(s.x+dx,s.z+dz);
+        if(terrain.kind(center)==TerrainMap.UNKNOWN)return "unknown";
+        int y=terrain.heights()[center];
+        for(int z=dz-halfD;z<=dz+halfD;z++)for(int x=dx-halfW;x<=dx+halfW;x++) {
+            int cell=terrain.index(s.x+x,s.z+z),kind=terrain.kind(cell);
+            if(kind==TerrainMap.UNKNOWN)return "unknown";
+            if(kind==TerrainMap.WATER||kind==TerrainMap.LAVA)return "water";
+            if(terrain.heights()[cell]!=y)return "uneven";
+            if(!terrain.clear(cell))return "blocked";
+        }
+        return "";
     }
     private static int professionColor(String profession) {
         return switch(profession) {case "builder"->0xFFE4B34F;case "lumberjack"->0xFF518651;case "miner"->0xFF858A9A;case "farmer"->0xFFCC8550;default->0xFFC2B79E;};
@@ -367,7 +439,7 @@ public final class SettlementScreen extends Screen {
         text(g,tr("status."+work),x,158,w,0xFFC4AA7D);
         text(g,tr("assignProfession"),x,199,w,0xFFC4AA7D);
     }
-    private void drawConstruction(GuiGraphicsExtractor g) {
+    private void drawConstruction(GuiGraphicsExtractor g,int mouseX,int mouseY) {
         int x=panelX+8,w=panelW-16;
         var b=buildings().stream().filter(value->value.id.equals(selectedBuilding)).findFirst().orElse(null);
         if(buildingDetails&&b!=null) {
@@ -377,19 +449,36 @@ public final class SettlementScreen extends Screen {
             text(g,Component.literal(b.x+", "+b.z),x,147,w,LIGHT);
             int progress=b.total<=0?0:(int)((long)Math.clamp(b.progress,0,b.total)*(w-2)/b.total);
             g.fill(x,161,x+w,167,0xFF211B14);g.fill(x+1,162,x+1+progress,166,0xFFC8A05D);
-        } else if(!buildChoice.isEmpty()) {
-            var definition=BuildingType.byId(buildChoice);
-            if(definition!=null)text(g,tr("buildingCost",definition.woodCost,definition.stoneCost),x,height-30,w,0xFFC4AA7D);
-        } else text(g,tr("chooseBuilding"),x,height-30,w,0xFFC4AA7D);
+        } else {
+            int rows=catalogRows(),pages=(TYPES.length+rows-1)/rows;
+            long wood=snapshot.settlement().resources.entrySet().stream().filter(entry->{
+                var item=BuiltInRegistries.ITEM.getValue(Identifier.parse(entry.getKey()));
+                return item!=null&&item.getDefaultInstance().is(net.minecraft.tags.ItemTags.LOGS);
+            }).mapToLong(java.util.Map.Entry::getValue).sum();
+            int stone=snapshot.settlement().resources.getOrDefault("minecraft:cobblestone",0);
+            for(int i=catalogPage*rows;i<Math.min((catalogPage+1)*rows,TYPES.length);i++) {
+                var type=BuildingType.byId(TYPES[i]);int y=111+(i-catalogPage*rows)*38;
+                g.item(new ItemStack(net.minecraft.world.item.Items.OAK_LOG),x,y);
+                g.item(new ItemStack(net.minecraft.world.item.Items.COBBLESTONE),x+w/2,y);
+                g.text(font,Integer.toString(type.woodCost),x+19,y+4,wood>=type.woodCost?0xFFB4D28A:0xFFFF9A85,false);
+                g.text(font,Integer.toString(type.stoneCost),x+w/2+19,y+4,stone>=type.stoneCost?0xFFB4D28A:0xFFFF9A85,false);
+                if(mouseX>=x&&mouseX<x+w&&mouseY>=y&&mouseY<y+17)
+                    g.setTooltipForNextFrame(tr("costAvailable",type.woodCost,wood,type.stoneCost,stone),mouseX,mouseY);
+            }
+            centered(g,Component.literal((catalogPage+1)+" / "+pages),x+21,height-37,w-42,GOLD);
+            text(g,tr(buildChoice.isEmpty()?"chooseBuilding":"placementHint"),x,height-17,w,0xFFC4AA7D);
+        }
     }
     @Override public boolean mouseClicked(MouseButtonEvent event,boolean doubleClick) {
         if(inMap(event.x(),event.y())&&snapshot.settlement()!=null) {
-            if(event.button()==1&&!buildChoice.isEmpty()) {buildChoice="";return true;}
-            if(event.button()!=0)return super.mouseClicked(event,doubleClick);
+            if(event.button()==InputConstants.MOUSE_BUTTON_RIGHT&&!buildChoice.isEmpty()) {buildChoice="";return true;}
+            if(event.button()!=InputConstants.MOUSE_BUTTON_LEFT)return super.mouseClicked(event,doubleClick);
             var s=snapshot.settlement();
             if(!buildChoice.isEmpty()) {
                 int dx=worldDx(event.x()),dz=worldDz(event.y()),halfW=halfWidth(buildChoice);
-                if(previewValid(dx,dz,halfW,halfDepth(buildChoice)))action("build",buildChoice,((long)dx<<32)|(dz&0xffffffffL));
+                // Always ask the authoritative server. Rejections must remain visible in the map.
+                action("build",buildChoice,((long)dx<<32)|(dz&0xffffffffL));
+                feedback=tr("placementPending");feedbackSuccess=false;feedbackPending=true;feedbackUntil=System.currentTimeMillis()+7000;
                 return true;
             }
             for(var r:s.residents) {
@@ -408,7 +497,7 @@ public final class SettlementScreen extends Screen {
         return super.mouseClicked(event,doubleClick);
     }
     @Override public boolean mouseDragged(MouseButtonEvent event,double dx,double dy) {
-        if(event.button()==0&&inMap(event.x(),event.y())&&buildChoice.isEmpty()) {panX-=dx/zoom;panZ-=dy/zoom;return true;}
+        if(event.button()==InputConstants.MOUSE_BUTTON_LEFT&&inMap(event.x(),event.y())&&buildChoice.isEmpty()) {panX-=dx/zoom;panZ-=dy/zoom;return true;}
         return super.mouseDragged(event,dx,dy);
     }
     @Override public boolean mouseScrolled(double x,double y,double dx,double dy) {

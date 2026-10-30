@@ -10,9 +10,13 @@ import net.minecraftforge.network.PacketDistributor;
 import space.magnitoshka.settlements.domain.Settlement;
 
 public final class SettlementNetwork {
-    private static final SimpleChannel CHANNEL = ChannelBuilder.named(Settlements.MODID + ":main").networkProtocolVersion(2).simpleChannel();
+    private static final SimpleChannel CHANNEL = ChannelBuilder.named(Settlements.MODID + ":main").networkProtocolVersion(3).simpleChannel();
     private static final Map<UUID, UUID> VIEWERS = new HashMap<>();
+    private static final Map<UUID,Long> LAST_TERRAIN=new HashMap<>();
+    public static Consumer<TerrainMap.Survey> terrainReceiver=survey->{};
     public static Consumer<Snapshot> clientReceiver = snapshot -> {};
+    public record Notice(String settlement,boolean success,net.minecraft.network.chat.Component message) {}
+    public static Consumer<Notice> noticeReceiver=notice->{};
     public record Action(String action, String settlement, String resident, String text, long amount) {}
     public record Summary(String id, String name) {}
     public record Snapshot(Settlement settlement, List<Summary> settlements, long wallet,
@@ -26,6 +30,30 @@ public final class SettlementNetwork {
             .encoder((m,b) -> b.writeUtf(SettlementData.GSON.toJson(m),262144))
             .decoder(b -> SettlementData.GSON.fromJson(b.readUtf(262144),Snapshot.class))
             .consumerMainThread((m,c) -> clientReceiver.accept(m)).add();
+        CHANNEL.messageBuilder(TerrainMap.Survey.class).direction(PacketFlow.CLIENTBOUND)
+            .encoder(TerrainMap::encode).decoder(TerrainMap::decode)
+            .consumerMainThread((m,c)->terrainReceiver.accept(m)).add();
+        CHANNEL.messageBuilder(Notice.class).direction(PacketFlow.CLIENTBOUND)
+            .encoder((m,b)->{
+                b.writeUtf(m.settlement,36);b.writeBoolean(m.success);
+                var json=net.minecraft.network.chat.ComponentSerialization.CODEC.encodeStart(com.mojang.serialization.JsonOps.INSTANCE,m.message).getOrThrow();
+                b.writeUtf(json.toString(),8192);
+            })
+            .decoder(b->{
+                String settlement=b.readUtf(36);boolean success=b.readBoolean();
+                var json=com.google.gson.JsonParser.parseString(b.readUtf(8192));
+                var message=net.minecraft.network.chat.ComponentSerialization.CODEC.parse(com.mojang.serialization.JsonOps.INSTANCE,json).getOrThrow();
+                return new Notice(settlement,success,message);
+            })
+            .consumerMainThread((m,c)->noticeReceiver.accept(m)).add();
+    }
+    public static void notice(ServerPlayer player,UUID settlement,boolean success,net.minecraft.network.chat.Component message) {
+        player.sendSystemMessage(message);
+        CHANNEL.send(new Notice(settlement==null?"":settlement.toString(),success,message),PacketDistributor.PLAYER.with(player));
+    }
+    public static void ownerNotice(net.minecraft.server.MinecraftServer server,Settlement settlement,boolean success,String key,Object...args) {
+        var owner=server.getPlayerList().getPlayer(settlement.owner);
+        if(owner!=null)notice(owner,settlement.id,success,net.minecraft.network.chat.Component.translatable(key,args));
     }
     public static void request(String action, String settlement, String resident, String text, long amount) {
         CHANNEL.send(new Action(action,settlement,resident,text,amount),PacketDistributor.SERVER.noArg());
@@ -34,7 +62,8 @@ public final class SettlementNetwork {
         VIEWERS.put(player.getUUID(),settlement);
         send(player,settlement,resident == null ? "" : resident.toString(),true);
     }
-    public static void close(UUID player) { VIEWERS.remove(player); }
+    public static void close(UUID player) { VIEWERS.remove(player); LAST_TERRAIN.remove(player); }
+    public static void refreshWarehouse(ServerPlayer player,UUID id) {send(player,id,"",false);}
     public static void refresh(ServerPlayer player) {
         if (VIEWERS.containsKey(player.getUUID())) send(player,VIEWERS.get(player.getUUID()),"",false);
     }
@@ -58,6 +87,14 @@ public final class SettlementNetwork {
             }
         }
         CHANNEL.send(new Snapshot(settlement,summaries,state.wallets.getOrDefault(player.getUUID(),0L),positions,resident,open,
-            SettlementConfig.RADIUS.get(),settlement==null?SettlementConfig.CAPACITY.get():Construction.capacity(settlement),settlement==null?0:settlement.bedCapacity,foodDays(settlement)),PacketDistributor.PLAYER.with(player));
+            settlement==null?SettlementConfig.RADIUS.get():Construction.radius(settlement),settlement==null?SettlementConfig.CAPACITY.get():Construction.capacity(settlement),settlement==null?0:settlement.bedCapacity,foodDays(settlement)),PacketDistributor.PLAYER.with(player));
+        if(settlement!=null&&!(player.containerMenu instanceof WarehouseMenu)) {
+            long now=player.level().getServer().getTickCount();
+            if(open||now-LAST_TERRAIN.getOrDefault(player.getUUID(),-1000L)>=TerrainMap.REFRESH_TICKS) {
+                var terrain=TerrainMap.get(player.level().getServer(),settlement,Construction.radius(settlement));
+                if(terrain!=null)CHANNEL.send(terrain,PacketDistributor.PLAYER.with(player));
+                LAST_TERRAIN.put(player.getUUID(),now);
+            }
+        }
     }
 }

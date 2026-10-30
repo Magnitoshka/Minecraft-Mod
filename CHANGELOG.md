@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0+26.3 — 2026-10-30
+
+Fixed SDL map placement input and visible action feedback; added loaded-only terrain/height survey and placement hints, per-blueprint resource icons, live overhead builder activity, a native warehouse menu with player inventory and multi-stack deposits, and post-result notifications. Fixed numeric NBT boolean loading, repeat starter banners and persisted territory radii; removed generated hall roof banners. Completed the player-feedback queue through static review and compilation only. Installed/applied ub-mode for the final code edit; optional quality tools were absent and skipped per user instruction.
+
 ## 0.2.0+26.3 — 2026-10-30
 
 Playable first-level construction and resource loop: houses, warehouses, lumber huts, mines and wheat fields; builder/lumberjack/miner/farmer jobs; XP, work status, real beds and growing warehouse capacity. Medieval parchment map with native timber buttons and building previews. Deterministic personal citizen skins generated locally. Owner-attributed damage is blocked. OP-only `/settlementadmin` edits wallets, treasury, food and residents. Protected edits, bounded path calculations and skin cleanup are included. Compiled without stand/runtime tests at the author's request.

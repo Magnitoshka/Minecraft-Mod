@@ -19,9 +19,9 @@ public final class Construction {
         if(type==null)return "invalid";
         var level=(ServerLevel)player.level();
         if(!level.dimension().identifier().toString().equals(s.dimension))return "dimension";
-        if(Math.abs((long)dx)>SettlementConfig.RADIUS.get()||Math.abs((long)dz)>SettlementConfig.RADIUS.get())return "territory";
+        if(Math.abs((long)dx)>radius(s)||Math.abs((long)dz)>radius(s))return "territory";
         int x=s.x+dx,z=s.z+dz;
-        if(Math.hypot(Math.abs((double)dx)+type.halfWidth,Math.abs((double)dz)+type.halfDepth)>SettlementConfig.RADIUS.get())return "territory";
+        if(Math.hypot(Math.abs((double)dx)+type.halfWidth,Math.abs((double)dz)+type.halfDepth)>radius(s))return "territory";
         if(s.buildings.stream().filter(b->!b.complete).count()>=16)return "queue_full";
         if(Math.abs(dx)<=4+type.halfWidth+1&&Math.abs(dz)<=3+type.halfDepth+1)return "collision";
         for(var b:s.buildings) {
@@ -69,7 +69,7 @@ public final class Construction {
             var p=queue.remove();if(p.equals(to))return true;
             for(var direction:Direction.Plane.HORIZONTAL)for(int dy:new int[]{0,1,-1}) {
                 var next=p.relative(direction).offset(0,dy,0);
-                if(Math.hypot((double)next.getX()-s.x,(double)next.getZ()-s.z)>SettlementConfig.RADIUS.get()+1||seen.contains(next))continue;
+                if(Math.hypot((double)next.getX()-s.x,(double)next.getZ()-s.z)>radius(s)+1||seen.contains(next))continue;
                 if(walkable(level,next)) {seen.add(next);queue.add(next);break;}
             }
         }
@@ -101,6 +101,7 @@ public final class Construction {
             ||Math.max(Math.abs((long)pos.getX()-spawn.pos().getX()),Math.abs((long)pos.getZ()-spawn.pos().getZ()))>radius;
     }
     public static String bedKey(BlockPos p) {return p.getX()+","+p.getY()+","+p.getZ();}
+    public static int radius(Settlement s) {return s.radius>0?s.radius:SettlementConfig.RADIUS.get();}
     public static int capacity(Settlement s) {
         long count=s.buildings.stream().filter(b->b.complete&&b.type.equals("warehouse")).count();
         return (int)Math.min(Integer.MAX_VALUE,SettlementConfig.CAPACITY.get()+count*SettlementConfig.WAREHOUSE_BONUS.get());

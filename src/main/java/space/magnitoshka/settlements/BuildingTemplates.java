@@ -54,6 +54,10 @@ public final class BuildingTemplates {
         }
         return List.copyOf(out);
     }
+    public static boolean matches(BlockState actual,BlockState expected) {
+        if(actual.getBlock()!=expected.getBlock())return false;
+        return !(expected.getBlock() instanceof BedBlock)||(actual.getValue(BedBlock.PART)==expected.getValue(BedBlock.PART)&&actual.getValue(BedBlock.FACING)==expected.getValue(BedBlock.FACING));
+    }
     private static void add(List<Piece> out,int x,int y,int z,BlockState state) {out.add(new Piece(x,y,z,state));}
     private BuildingTemplates() {}
 }

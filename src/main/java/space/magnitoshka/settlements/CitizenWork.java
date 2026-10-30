@@ -25,7 +25,7 @@ public final class CitizenWork {
     private String lastProfession="";
     public void tick(CitizenEntity citizen,ServerLevel level,SettlementData data,Settlement s,Resident r) {
         if(!r.profession.equals(lastProfession)) {
-            treeLogs.clear();treeBase=null;lastProfession=r.profession;citizen.getNavigation().stop();
+            treeLogs.clear();treeBase=null;r.taskBuilding="";lastProfession=r.profession;citizen.getNavigation().stop();
             var tool=switch(r.profession) {case "builder","lumberjack"->Items.STONE_AXE;case "miner"->Items.STONE_PICKAXE;case "farmer"->Items.STONE_HOE;default->Items.AIR;};
             citizen.setItemSlot(EquipmentSlot.MAINHAND,tool==Items.AIR?ItemStack.EMPTY:new ItemStack(tool));
         }
@@ -42,36 +42,57 @@ public final class CitizenWork {
         var active=pending.stream().filter(b->!"blocked".equals(b.status)).findFirst().orElse(null);
         var job=active;
         if(!blocked.isEmpty()&&(active==null||citizen.tickCount%100==0))job=blocked.get(Math.floorMod(buildRetryCursor++,blocked.size()));
-        if(job==null) {r.workStatus="idle";return;}
+        if(job==null) {r.workStatus="idle";r.taskBuilding="";return;}
+        r.taskBuilding=job.id;
         var type=BuildingType.byId(job.type);
-        if(type==null) {r.workStatus="blocked";return;}
+        if(type==null) {block(level,data,s,r,job);return;}
         BlockPos origin=new BlockPos(job.x,job.y,job.z);
         var entrance=origin.offset(0,0,-type.halfDepth-1);
-        if(!approach(citizen,entrance,r,4)) {if(r.workStatus.equals("blocked"))job.status="blocked";return;}
+        if(!approach(citizen,entrance,r,4)) {if(r.workStatus.equals("blocked"))block(level,data,s,r,job);return;}
         var pieces=BuildingTemplates.pieces(type);
         int count=Math.max(1,(int)Math.floor(SettlementConfig.BUILD_RATE.get()*r.workEfficiency()));
         boolean changed=false;
         for(int i=0;i<count&&job.progress<pieces.size();i++) {
             var piece=pieces.get(job.progress);var at=piece.at(origin);
-            if(!Construction.canChange(level,at,s.owner)) {r.workStatus="blocked";job.status="blocked";break;}
+            if(!Construction.canChange(level,at,s.owner)) {block(level,data,s,r,job);break;}
             var current=level.getBlockState(at);
             // Resume safely if the previous write was saved before its progress cursor.
-            if(!current.equals(piece.state())) {
+            if(!BuildingTemplates.matches(current,piece.state())) {
                 if(level.getBlockEntity(at)!=null || (piece.y()>=0&&!current.canBeReplaced())) {
-                    r.workStatus="blocked";job.status="blocked";break;
+                    block(level,data,s,r,job);break;
                 }
                 if(piece.y()<0 && (!current.isFaceSturdy(level,at,net.minecraft.core.Direction.UP)
-                    ||!level.getFluidState(at).isEmpty())) {r.workStatus="blocked";job.status="blocked";break;}
+                    ||!level.getFluidState(at).isEmpty())) {block(level,data,s,r,job);break;}
                 // Pair halves are followed immediately; no neighbor notifications until both exist.
                 if(!level.setBlock(at,piece.state(),piece.state().getBlock() instanceof BedBlock?2:3)) {
-                    r.workStatus="blocked";job.status="blocked";break;
+                    block(level,data,s,r,job);break;
+                }
+                if(!job.started) {
+                    job.started=true;
+                    SettlementNetwork.ownerNotice(level.getServer(),s,true,"action.smartsettlements.construction_started",net.minecraft.network.chat.Component.translatable("building.smartsettlements."+job.type));
                 }
             }
             job.progress++;changed=true;r.workStatus="working";job.status="building";
             Construction.award(r,SettlementConfig.BUILDER_XP.get());
         }
-        if(job.progress>=pieces.size()) {job.complete=true;job.status="complete";changed=true;r.workStatus="idle";}
+        if(job.progress>=pieces.size()) {
+            int missing=-1;
+            for(int i=0;i<pieces.size();i++) {
+                var at=pieces.get(i).at(origin);
+                if(!level.hasChunkAt(at)||!BuildingTemplates.matches(level.getBlockState(at),pieces.get(i).state())) {missing=i;break;}
+            }
+            if(missing>=0) {job.progress=missing;block(level,data,s,r,job);}
+            else {
+                job.complete=true;job.status="complete";changed=true;r.workStatus="idle";
+                SettlementNetwork.ownerNotice(level.getServer(),s,true,"action.smartsettlements.construction_complete",net.minecraft.network.chat.Component.translatable("building.smartsettlements."+job.type));
+            }
+        }
         if(changed) {citizen.swingForAttack(InteractionHand.MAIN_HAND);data.setDirty();}
+    }
+    private void block(ServerLevel level,SettlementData data,Settlement s,Resident r,Building job) {
+        boolean newlyBlocked=!"blocked".equals(job.status);
+        r.workStatus="blocked";job.status="blocked";data.setDirty();
+        if(newlyBlocked)SettlementNetwork.ownerNotice(level.getServer(),s,false,"action.smartsettlements.construction_blocked",net.minecraft.network.chat.Component.translatable("building.smartsettlements."+job.type));
     }
     private void produce(CitizenEntity citizen,ServerLevel level,SettlementData data,Settlement s,Resident r) {
         var workplace=s.buildings.stream().filter(b->b.complete&&b.id.equals(r.workplace)).findFirst().orElse(null);
@@ -108,7 +129,7 @@ public final class CitizenWork {
             for(int n=0;n<96&&treeLogs.isEmpty();n++) {
                 int[] offset=searchOffsets.get(Math.floorMod(searchCursor++,searchOffsets.size()));
                 int x=workplace.x+offset[0],z=workplace.z+offset[1];
-                if(Math.hypot((double)x-s.x,(double)z-s.z)>SettlementConfig.RADIUS.get())continue;
+                if(Math.hypot((double)x-s.x,(double)z-s.z)>Construction.radius(s))continue;
                 var column=new BlockPos(x,workplace.y,z);if(!level.hasChunkAt(column))continue;
                 int top=level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,x,z);
                 for(int y=Math.max(level.getMinY()+1,top-24);y<=top;y++) {
@@ -152,7 +173,7 @@ public final class CitizenWork {
             for(var direction:net.minecraft.core.Direction.values()) {
                 var next=p.relative(direction);
                 if(next.getY()<base.getY()||next.getY()>base.getY()+24||Math.abs(next.getX()-base.getX())>4||Math.abs(next.getZ()-base.getZ())>4
-                    ||Math.hypot((double)next.getX()-s.x,(double)next.getZ()-s.z)>SettlementConfig.RADIUS.get())continue;
+                    ||Math.hypot((double)next.getX()-s.x,(double)next.getZ()-s.z)>Construction.radius(s))continue;
                 if(seen.add(next))queue.add(next);
             }
         }
@@ -169,7 +190,7 @@ public final class CitizenWork {
         if(treeSpecies.endsWith(":dark_oak_log")||treeSpecies.endsWith(":pale_oak_log")) {
             for(int x=0;x<2;x++)for(int z=0;z<2;z++) {
                 var p=treeBase.offset(x,0,z);
-                if(Construction.canChange(level,p,s.owner)&&Math.hypot((double)p.getX()-s.x,(double)p.getZ()-s.z)<=SettlementConfig.RADIUS.get()&&level.getBlockState(p).canBeReplaced()&&level.getBlockState(p.below()).is(BlockTags.DIRT))level.setBlock(p,sapling.defaultBlockState(),3);
+                if(Construction.canChange(level,p,s.owner)&&Math.hypot((double)p.getX()-s.x,(double)p.getZ()-s.z)<=Construction.radius(s)&&level.getBlockState(p).canBeReplaced()&&level.getBlockState(p.below()).is(BlockTags.DIRT))level.setBlock(p,sapling.defaultBlockState(),3);
             }
         }
     }

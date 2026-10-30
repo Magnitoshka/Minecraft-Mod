@@ -25,9 +25,19 @@ public final class ClientEvents {
         event.registerEntityRenderer(Settlements.CITIZEN.get(),CitizenRenderer::new);
     }
     @SubscribeEvent public static void setup(FMLClientSetupEvent event) {
+        event.enqueueWork(()->net.minecraft.client.gui.screens.MenuScreens.register(Settlements.WAREHOUSE_MENU.get(),WarehouseScreen::new));
+        SettlementNetwork.noticeReceiver=notice->{
+            var screen=Minecraft.getInstance().gui.screen();
+            if(screen instanceof SettlementScreen map)map.notice(notice);
+            else if(screen instanceof WarehouseScreen warehouse)warehouse.notice(notice);
+        };
+        SettlementNetwork.terrainReceiver=survey->{
+            if(Minecraft.getInstance().gui.screen() instanceof SettlementScreen screen)screen.terrain(survey);
+        };
         SettlementNetwork.clientReceiver=snapshot -> {
             var mc=Minecraft.getInstance();
-            if (mc.gui.screen() instanceof SettlementScreen screen) screen.update(snapshot);
+            if(mc.gui.screen() instanceof WarehouseScreen warehouse)warehouse.update(snapshot);
+            else if (mc.gui.screen() instanceof SettlementScreen screen) screen.update(snapshot);
             else if (snapshot.open()) mc.gui.setScreen(new SettlementScreen(snapshot));
         };
         net.minecraftforge.client.event.ClientPlayerNetworkEvent.LoggingOut.BUS.addListener(e->CitizenSkins.clear());

@@ -13,6 +13,8 @@ public final class Settlement {
     public String dimension;
     public int x, y, z;
     public int level = 1;
+    public int radius;
+    public boolean roofBannerCleaned;
     public int bedCapacity = 3;
     public long treasury;
     public long lastDay;

@@ -25,6 +25,9 @@ public final class Settlements {
     public static final RegistryObject<net.minecraft.server.level.TicketType> LOADING = TICKETS.register("settlement", () ->
         new net.minecraft.server.level.TicketType(100L, net.minecraft.server.level.TicketType.FLAG_LOADING |
             net.minecraft.server.level.TicketType.FLAG_SIMULATION | net.minecraft.server.level.TicketType.FLAG_KEEP_DIMENSION_ACTIVE));
+    public static final DeferredRegister<net.minecraft.world.inventory.MenuType<?>> MENUS=DeferredRegister.create(Registries.MENU,MODID);
+    public static final RegistryObject<net.minecraft.world.inventory.MenuType<WarehouseMenu>> WAREHOUSE_MENU=MENUS.register("warehouse",
+        ()->net.minecraftforge.common.extensions.IForgeMenuType.create(WarehouseMenu::new));
     public static final RegistryObject<Item> BANNER = ITEMS.register("founder_banner",
         () -> new FounderBanner(new Item.Properties().setId(ITEMS.key("founder_banner")).stacksTo(1)));
     public static final RegistryObject<EntityType<CitizenEntity>> CITIZEN = ENTITIES.register("citizen",
@@ -36,12 +39,17 @@ public final class Settlements {
         ITEMS.register(group);
         ENTITIES.register(group);
         TICKETS.register(group);
+        MENUS.register(group);
         context.registerConfig(ModConfig.Type.SERVER, SettlementConfig.SPEC);
         EntityAttributeCreationEvent.BUS.addListener(e -> e.put(CITIZEN.get(), CitizenEntity.attributes().build()));
         BuildCreativeModeTabContentsEvent.BUS.addListener(e -> {
             if (e.getTabKey() == CreativeModeTabs.TOOLS_AND_UTILITIES) e.accept(BANNER.get());
         });
         PlayerEvent.PlayerLoggedInEvent.BUS.addListener(ServerSettlements::login);
+        PlayerEvent.Clone.BUS.addListener(e->{
+            if(e.getOriginal().getPersistentData().getBooleanOr("SmartSettlementsStarter",false))
+                e.getEntity().getPersistentData().putBoolean("SmartSettlementsStarter",true);
+        });
         PlayerEvent.PlayerLoggedOutEvent.BUS.addListener(e -> SettlementNetwork.close(e.getEntity().getUUID()));
         TickEvent.ServerTickEvent.Post.BUS.addListener(ServerSettlements::tick);
         PlayerInteractEvent.RightClickBlock.BUS.addListener(ServerSettlements::interact);

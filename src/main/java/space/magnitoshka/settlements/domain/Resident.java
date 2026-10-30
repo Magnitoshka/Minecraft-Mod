@@ -14,6 +14,7 @@ public final class Resident {
     public boolean spawned;
     public String bed = "";
     public String workplace = "";
+    public String taskBuilding = "";
     public String workStatus = "idle";
     public int workTicks;
     public int carriedWheat;

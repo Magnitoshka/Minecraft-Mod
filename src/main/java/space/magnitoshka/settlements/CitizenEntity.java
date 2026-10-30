@@ -52,7 +52,6 @@ public final class CitizenEntity extends PathfinderMob {
         if (s==null) { discard(); return; }
         var r=s.residents.stream().filter(v->v.id.equals(getUUID())).findFirst().orElse(null);
         if (r==null) { discard(); return; }
-        setCustomName(Component.literal(r.name).append(Component.literal(" · ")).append(Component.translatable("profession.smartsettlements."+r.profession)));
         BlockPos bed=null;
         if(r.bed!=null&&!r.bed.isEmpty()) {
             String[] xyz=r.bed.split(",");
@@ -67,7 +66,7 @@ public final class CitizenEntity extends PathfinderMob {
         if(night!=nightRoutine) {getNavigation().stop();nightRoutine=night;}
         if(night) {
             r.workStatus="resting";
-            if(!hasBed) {if(isSleeping())stopSleeping();getNavigation().stop();return;}
+            if(!hasBed) {if(isSleeping())stopSleeping();getNavigation().stop();updateActivity(s,r);return;}
             if(!isSleeping()) {
                 if(distanceToSqr(bed.getX()+.5,bed.getY()+.5,bed.getZ()+.5)<4) {getNavigation().stop();startSleeping(bed);}
                 else if(getNavigation().isDone()&&NavigationBudget.take(server.getServer()))getNavigation().moveTo(bed.getX()+.5,bed.getY(),bed.getZ()+.5,.8);
@@ -80,6 +79,20 @@ public final class CitizenEntity extends PathfinderMob {
                 getNavigation().moveTo(s.x+dx+.5,s.y,s.z+dz+.5,.6);
             }
         }
+        updateActivity(s,r);
+    }
+    private void updateActivity(space.magnitoshka.settlements.domain.Settlement s,Resident r) {
+        String status=r.workStatus==null||r.workStatus.isEmpty()?"idle":r.workStatus;
+        Component activity=Component.translatable("ui.smartsettlements.status."+status);
+        if(r.profession.equals("builder")) {
+            if(status.equals("walking"))activity=Component.translatable("activity.smartsettlements.walking_builder");
+            if(status.equals("working")) {
+                var job=s.buildings.stream().filter(b->b.id.equals(r.taskBuilding)).findFirst().orElse(null);
+                if(job!=null)activity=Component.translatable("activity.smartsettlements.building",Component.translatable("activity.smartsettlements.target."+job.type));
+            }
+        }
+        var name=Component.literal(r.name).append(" · ").append(activity.copy().withStyle(net.minecraft.ChatFormatting.ITALIC));
+        if(!name.equals(getCustomName()))setCustomName(name);
     }
 
     @Override protected InteractionResult mobInteract(Player player, InteractionHand hand) {

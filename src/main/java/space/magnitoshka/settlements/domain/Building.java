@@ -8,6 +8,7 @@ public final class Building {
     public String type="house",status="waiting_builder";
     public int x,y,z,progress,total;
     public boolean complete;
+    public boolean started;
     public Building() {}
     public Building(BuildingType type,int x,int y,int z,int total) {
         this.type=type.id;this.x=x;this.y=y;this.z=z;this.total=total;
