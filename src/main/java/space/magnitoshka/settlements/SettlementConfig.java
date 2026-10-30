@@ -33,6 +33,7 @@ public final class SettlementConfig {
     public static final ForgeConfigSpec.IntValue BUILDER_XP = integer("builderXpPerBlock", 1, 0, 100);
     public static final ForgeConfigSpec.IntValue WORK_XP = integer("workerXpPerDelivery", 5, 0, 1000);
     public static final ForgeConfigSpec.IntValue PATH_BUDGET = integer("pathCalculationsPerTick", 8, 1, 64);
+    public static final ForgeConfigSpec.IntValue TERRAIN_BUDGET = integer("terrainColumnsPerTick",256,32,2048);
     public static final ForgeConfigSpec SPEC = B.build();
     private static ForgeConfigSpec.IntValue integer(String key, int value, int min, int max) {
         return B.defineInRange(key, value, min, max);

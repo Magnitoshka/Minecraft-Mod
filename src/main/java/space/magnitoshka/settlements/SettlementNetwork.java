@@ -12,7 +12,7 @@ import space.magnitoshka.settlements.domain.Settlement;
 public final class SettlementNetwork {
     private static final SimpleChannel CHANNEL = ChannelBuilder.named(Settlements.MODID + ":main").networkProtocolVersion(3).simpleChannel();
     private static final Map<UUID, UUID> VIEWERS = new HashMap<>();
-    private static final Map<UUID,Long> LAST_TERRAIN=new HashMap<>();
+    private static final Map<UUID,TerrainMap.Survey> LAST_TERRAIN=new HashMap<>();
     public static Consumer<TerrainMap.Survey> terrainReceiver=survey->{};
     public static Consumer<Snapshot> clientReceiver = snapshot -> {};
     public record Notice(String settlement,boolean success,net.minecraft.network.chat.Component message) {}
@@ -67,6 +67,14 @@ public final class SettlementNetwork {
     public static void refresh(ServerPlayer player) {
         if (VIEWERS.containsKey(player.getUUID())) send(player,VIEWERS.get(player.getUUID()),"",false);
     }
+    public static void tickTerrain(net.minecraft.server.MinecraftServer server) {
+        var visible=new HashSet<UUID>();
+        for(var entry:VIEWERS.entrySet()) {
+            var player=server.getPlayerList().getPlayer(entry.getKey());
+            if(entry.getValue()!=null&&player!=null&&!(player.containerMenu instanceof WarehouseMenu))visible.add(entry.getValue());
+        }
+        TerrainMap.tick(server,visible);
+    }
     private static double foodDays(Settlement s) {
         if(s==null || s.residents.isEmpty())return 0;
         long food=s.foodCredit;
@@ -89,11 +97,9 @@ public final class SettlementNetwork {
         CHANNEL.send(new Snapshot(settlement,summaries,state.wallets.getOrDefault(player.getUUID(),0L),positions,resident,open,
             settlement==null?SettlementConfig.RADIUS.get():Construction.radius(settlement),settlement==null?SettlementConfig.CAPACITY.get():Construction.capacity(settlement),settlement==null?0:settlement.bedCapacity,foodDays(settlement)),PacketDistributor.PLAYER.with(player));
         if(settlement!=null&&!(player.containerMenu instanceof WarehouseMenu)) {
-            long now=player.level().getServer().getTickCount();
-            if(open||now-LAST_TERRAIN.getOrDefault(player.getUUID(),-1000L)>=TerrainMap.REFRESH_TICKS) {
-                var terrain=TerrainMap.get(player.level().getServer(),settlement,Construction.radius(settlement));
-                if(terrain!=null)CHANNEL.send(terrain,PacketDistributor.PLAYER.with(player));
-                LAST_TERRAIN.put(player.getUUID(),now);
+            var terrain=TerrainMap.get(player.level().getServer(),settlement,Construction.radius(settlement));
+            if(terrain!=null&&(open||terrain!=LAST_TERRAIN.get(player.getUUID()))) {
+                CHANNEL.send(terrain,PacketDistributor.PLAYER.with(player));LAST_TERRAIN.put(player.getUUID(),terrain);
             }
         }
     }

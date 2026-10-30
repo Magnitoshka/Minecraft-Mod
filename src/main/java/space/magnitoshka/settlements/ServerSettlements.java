@@ -118,6 +118,7 @@ public final class ServerSettlements {
         return false;
     }
     public static void tick(TickEvent.ServerTickEvent.Post event) {
+        SettlementNetwork.tickTerrain(event.server());
         if (++ticks%20!=0) return;
         var server=event.server(); var data=SettlementData.get(server);
         Map<UUID,Integer> loaded = new HashMap<>();

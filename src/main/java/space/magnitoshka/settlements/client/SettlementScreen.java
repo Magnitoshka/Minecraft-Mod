@@ -25,6 +25,7 @@ public final class SettlementScreen extends Screen {
     private static final String[] TABS={"overview","citizens","warehouse","construction"};
     private static final String[] PROFESSIONS={"unemployed","builder","lumberjack","miner","farmer"};
     private static final String[] TYPES={"house","warehouse","lumber_hut","mine","field"};
+    private final TerrainTexture terrainTexture=new TerrainTexture();
     private SettlementNetwork.Snapshot snapshot;
     private space.magnitoshka.settlements.TerrainMap.Survey terrain;
     private Component feedback;
@@ -79,7 +80,7 @@ public final class SettlementScreen extends Screen {
             .equals(incoming.residents.stream().map(r->r.id).toList());
         snapshot=next;
         if(switched) {
-            rename=null; amount=null; renameDraft=null; amountDraft="10";terrain=null;feedback=null;
+            rename=null; amount=null; renameDraft=null; amountDraft="10";terrain=null;terrainTexture.close();feedback=null;
             citizen=""; selectedBuilding=""; buildChoice=""; buildingDetails=false;
             residentIndex=resourcePage=0;panX=panZ=0;
         }
@@ -270,13 +271,11 @@ public final class SettlementScreen extends Screen {
         var s=snapshot.settlement();
         g.enableScissor(mapLeft+2,mapTop+2,mapRight-2,mapBottom-2);
         drawTerrain(g);
-        for(int x=mapLeft+4;x<mapRight;x+=19)for(int y=mapTop+5;y<mapBottom;y+=17)
-            g.fill(x,y,x+1,y+1,0x20826C43);
         int grid=Math.max(12,(int)(16*zoom));
         int offsetX=Math.floorMod(mapX(0)-mapLeft,grid),offsetZ=Math.floorMod(mapZ(0)-mapTop,grid);
         for(int x=mapLeft+offsetX;x<mapRight;x+=grid)g.fill(x,mapTop,x+1,mapBottom,0x226F633F);
         for(int y=mapTop+offsetZ;y<mapBottom;y+=grid)g.fill(mapLeft,y,mapRight,y+1,0x226F633F);
-        for(int degree=0;degree<360;degree++) {
+        for(int degree=0;degree<360;degree+=4) {
             double a=Math.toRadians(degree);
             int x=mapX(Math.cos(a)*snapshot.radius()),z=mapZ(Math.sin(a)*snapshot.radius());
             g.fill(x,z,x+1,z+1,0xFF8A6A37);
@@ -355,20 +354,12 @@ public final class SettlementScreen extends Screen {
     }
     private void drawTerrain(GuiGraphicsExtractor g) {
         g.fill(mapLeft,mapTop,mapRight,mapBottom,0xFF8A8273);
-        for(int y=mapTop;y<mapBottom;y+=8)for(int x=mapLeft+(y%16==0?0:4);x<mapRight;x+=8)
-            g.fill(x,y,x+2,y+2,0xFF756F64);
         if(terrain==null||snapshot.settlement()==null)return;
         var s=snapshot.settlement();
-        int minX=Math.clamp(Math.floorDiv(s.x+worldDx(mapLeft)-terrain.originX(),terrain.step())-1,0,terrain.size()-1);
-        int maxX=Math.clamp(Math.floorDiv(s.x+worldDx(mapRight)-terrain.originX(),terrain.step())+1,0,terrain.size()-1);
-        int minZ=Math.clamp(Math.floorDiv(s.z+worldDz(mapTop)-terrain.originZ(),terrain.step())-1,0,terrain.size()-1);
-        int maxZ=Math.clamp(Math.floorDiv(s.z+worldDz(mapBottom)-terrain.originZ(),terrain.step())+1,0,terrain.size()-1);
-        for(int z=minZ;z<=maxZ;z++)for(int x=minX;x<=maxX;x++) {
-            int i=z*terrain.size()+x;if(terrain.kind(i)==TerrainMap.UNKNOWN)continue;
-            int dx=terrain.originX()+x*terrain.step()-s.x,dz=terrain.originZ()+z*terrain.step()-s.z;
-            int x1=mapX(dx),x2=mapX(dx+terrain.step()),z1=mapZ(dz),z2=mapZ(dz+terrain.step());
-            if(x2>x1&&z2>z1)g.fill(x1,z1,x2,z2,terrain.colors()[i]);
-        }
+        int x0=mapX(terrain.originX()-s.x),z0=mapZ(terrain.originZ()-s.z);
+        int x1=mapX(terrain.originX()+terrain.size()*terrain.step()-s.x);
+        int z1=mapZ(terrain.originZ()+terrain.size()*terrain.step()-s.z);
+        terrainTexture.draw(g,terrain,x0,z0,x1,z1);
     }
     private Component terrainInfo(double mouseX,double mouseY) {
         if(!inMap(mouseX,mouseY)||snapshot.settlement()==null)return null;
@@ -510,5 +501,5 @@ public final class SettlementScreen extends Screen {
         return super.mouseScrolled(x,y,dx,dy);
     }
     @Override public boolean isPauseScreen() {return false;}
-    @Override public void removed() {SettlementNetwork.request("close","","","",0);}
+    @Override public void removed() {terrainTexture.close();SettlementNetwork.request("close","","","",0);}
 }

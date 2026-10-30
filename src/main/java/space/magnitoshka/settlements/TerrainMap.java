@@ -34,32 +34,82 @@ public final class TerrainMap {
         public boolean clear(int index) {return index>=0&&(flags[index]&CLEAR)!=0;}
     }
     private record Cached(long tick,int radius,Survey survey) {}
-    private static final Map<MinecraftServer,LinkedHashMap<UUID,Cached>> CACHE=new WeakHashMap<>();
-    public static Survey get(MinecraftServer server,Settlement settlement,int radius) {
-        var worlds=CACHE.computeIfAbsent(server,key->new LinkedHashMap<>(16,.75f,true));
-        long tick=server.getTickCount();var old=worlds.get(settlement.id);
-        if(old!=null&&old.radius==radius&&tick-old.tick<REFRESH_TICKS)return old.survey;
-        var level=server.getLevel(ResourceKey.create(Registries.DIMENSION,Identifier.parse(settlement.dimension)));
-        if(level==null)return null;
-        var survey=sample(level,settlement,radius);
-        worlds.put(settlement.id,new Cached(tick,radius,survey));
-        while(worlds.size()>64)worlds.remove(worlds.keySet().iterator().next());
-        return survey;
+    private static final class ServerCache {
+        final LinkedHashMap<UUID,Cached> ready=new LinkedHashMap<>(16,.75f,true);
+        final LinkedHashMap<UUID,Job> pending=new LinkedHashMap<>();
     }
-    private static Survey sample(ServerLevel level,Settlement s,int radius) {
-        int extent=radius+12;
-        int step=Math.max(1,(2*extent+MAX_SIZE-2)/(MAX_SIZE-1));
-        int half=(extent+step-1)/step,size=2*half+1;
-        int x0=s.x-half*step,z0=s.z-half*step;
-        int[] colors=new int[size*size];short[] heights=new short[size*size];byte[] flags=new byte[size*size];
-        Arrays.fill(heights,Short.MIN_VALUE);
-        for(int z=0;z<size;z++)for(int x=0;x<size;x++) {
-            int i=z*size+x,wx=x0+x*step,wz=z0+z*step;
-            var column=new BlockPos(wx,s.y,wz);
-            if(!level.hasChunkAt(column)||!level.getWorldBorder().isWithinBounds(column))continue;
+    private static final class Job {
+        final UUID id;final String dimension;
+        final int radius,y,x0,z0,step,size;
+        final int[] colors;final short[] heights;final byte[] flags;
+        int cursor;
+        Job(Settlement settlement,int radius) {
+            id=settlement.id;dimension=settlement.dimension;this.radius=radius;y=settlement.y;
+            int extent=radius+12;
+            step=Math.max(1,(2*extent+MAX_SIZE-2)/(MAX_SIZE-1));
+            int half=(extent+step-1)/step;size=2*half+1;
+            x0=settlement.x-half*step;z0=settlement.z-half*step;
+            colors=new int[size*size];heights=new short[size*size];flags=new byte[size*size];
+            Arrays.fill(heights,Short.MIN_VALUE);
+        }
+        boolean done() {return cursor==colors.length;}
+        Survey finish() {
+            for(int z=0;z<size;z++)for(int x=0;x<size;x++) {
+                int i=z*size+x;if(flags[i]==0)continue;
+                int north=z>0&&(flags[i-size]&15)!=UNKNOWN?heights[i-size]:heights[i];
+                int west=x>0&&(flags[i-1]&15)!=UNKNOWN?heights[i-1]:heights[i];
+                float amount=(float)Math.clamp(.95+(heights[i]-north)*.065/step+(heights[i]-west)*.04/step,.60,1.17);
+                if((flags[i]&15)==WATER)amount=.96f;
+                colors[i]=shade(colors[i],amount);
+            }
+            return new Survey(id.toString(),x0,z0,step,size,colors,heights,flags);
+        }
+    }
+    private static final Map<MinecraftServer,ServerCache> CACHE=new WeakHashMap<>();
+    /** A cheap lookup/enqueue only. This method never samples the world. */
+    public static Survey get(MinecraftServer server,Settlement settlement,int radius) {
+        var cache=CACHE.computeIfAbsent(server,key->new ServerCache());
+        var old=cache.ready.get(settlement.id);long now=server.getTickCount();
+        if(old!=null&&old.radius==radius&&now-old.tick<REFRESH_TICKS)return old.survey;
+        var pending=cache.pending.get(settlement.id);
+        if(pending==null||pending.radius!=radius) {
+            if(cache.pending.size()>=64&&!cache.pending.containsKey(settlement.id))return old==null?null:old.survey;
+            cache.pending.put(settlement.id,new Job(settlement,radius));
+        }
+        return old!=null&&old.radius==radius?old.survey:null;
+    }
+    /** One shared budget, round-robin across open maps. No background thread touches live chunks. */
+    public static void tick(MinecraftServer server,Set<UUID> visible) {
+        var cache=CACHE.get(server);if(cache==null)return;
+        cache.pending.keySet().removeIf(id->!visible.contains(id));
+        int remaining=SettlementConfig.TERRAIN_BUDGET.get();
+        while(remaining>0&&!cache.pending.isEmpty()) {
+            var entry=cache.pending.entrySet().iterator().next();
+            var job=entry.getValue();cache.pending.remove(entry.getKey());
+            var level=server.getLevel(ResourceKey.create(Registries.DIMENSION,Identifier.parse(job.dimension)));
+            if(level==null)continue;
+            int count=Math.min(64,Math.min(remaining,job.colors.length-job.cursor));
+            for(int i=0;i<count;i++)sampleCell(level,job,job.cursor++);
+            remaining-=count;
+            if(job.done()) {
+                var survey=job.finish();var old=cache.ready.get(job.id);
+                if(old!=null&&same(old.survey,survey))survey=old.survey;
+                cache.ready.put(job.id,new Cached(server.getTickCount(),job.radius,survey));
+                while(cache.ready.size()>64)cache.ready.remove(cache.ready.keySet().iterator().next());
+            } else cache.pending.put(job.id,job);
+        }
+    }
+    private static boolean same(Survey a,Survey b) {
+        return a.originX==b.originX&&a.originZ==b.originZ&&a.step==b.step&&a.size==b.size
+            &&Arrays.equals(a.colors,b.colors)&&Arrays.equals(a.heights,b.heights)&&Arrays.equals(a.flags,b.flags);
+    }
+    private static void sampleCell(ServerLevel level,Job job,int i) {
+            int wx=job.x0+(i%job.size)*job.step,wz=job.z0+(i/job.size)*job.step;
+            var column=new BlockPos(wx,job.y,wz);
+            if(!level.hasChunkAt(column)||!level.getWorldBorder().isWithinBounds(column))return;
             int surface=level.getHeight(Heightmap.Types.WORLD_SURFACE,wx,wz)-1;
             int ground=level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,wx,wz)-1;
-            if(surface<level.getMinY()||ground<level.getMinY()||surface>=level.getMaxY())continue;
+            if(surface<level.getMinY()||ground<level.getMinY()||surface>=level.getMaxY())return;
             var pos=new BlockPos(wx,surface,wz);var state=level.getBlockState(pos);
             var color=state.getMapColor(level,pos);int rgb=color.col;
             int kind=OTHER;
@@ -79,20 +129,9 @@ public final class TerrainMap {
                 var at=floor.above(y);
                 clear=at.getY()<level.getMaxY()&&level.getBlockState(at).canBeReplaced()&&level.getFluidState(at).isEmpty();
             }
-            heights[i]=(short)Math.clamp(ground+1,Short.MIN_VALUE+1,Short.MAX_VALUE);
-            flags[i]=(byte)(kind|(clear?CLEAR:0));
-            colors[i]=0xFF000000|(rgb==0?0xB5A47B:rgb);
-        }
-        // North-west light makes slopes readable while material colors still identify beaches/water.
-        for(int z=0;z<size;z++)for(int x=0;x<size;x++) {
-            int i=z*size+x;if(flags[i]==0)continue;
-            int north=z>0&&(flags[i-size]&15)!=UNKNOWN?heights[i-size]:heights[i];
-            int west=x>0&&(flags[i-1]&15)!=UNKNOWN?heights[i-1]:heights[i];
-            float shade=(float)Math.clamp(.95+(heights[i]-north)*.065/step+(heights[i]-west)*.04/step,.60,1.17);
-            if((flags[i]&15)==WATER)shade=.96f;
-            colors[i]=shade(colors[i],shade);
-        }
-        return new Survey(s.id.toString(),x0,z0,step,size,colors,heights,flags);
+            job.heights[i]=(short)Math.clamp(ground+1,Short.MIN_VALUE+1,Short.MAX_VALUE);
+            job.flags[i]=(byte)(kind|(clear?CLEAR:0));
+            job.colors[i]=0xFF000000|(rgb==0?0xB5A47B:rgb);
     }
     private static int shade(int argb,float amount) {
         int r=Math.min(255,(int)(((argb>>16)&255)*amount)),g=Math.min(255,(int)(((argb>>8)&255)*amount)),b=Math.min(255,(int)((argb&255)*amount));
